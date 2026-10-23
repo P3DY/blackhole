@@ -1,0 +1,51 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: #05060a;
+  color: #e8ecf4;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+#app canvas {
+  display: block;
+}
+
+/* Title, pitch and controls. Above the HUD (z-index 5), below the end-of-game card (11). */
+#intro {
+  position: fixed;
+  z-index: 10;
+  top: 16px;
+  left: 16px;
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 16px 18px;
+  background: rgba(12, 14, 22, 0.72);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  pointer-events: none;
+}
+
+#intro h1 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-bottom: 8px;
+}
+
+#intro p {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #b8c0d0;
+}
+
+#intro .hint {
+  margin-top: 10px;
+  font-size: 11px;
+  color: #7a8296;
+}

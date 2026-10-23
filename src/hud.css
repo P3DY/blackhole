@@ -1,0 +1,245 @@
+/* HUD laid over the canvas, below the intro panel (except the end-of-game card). */
+
+.bh,
+.bh-overlay {
+  font-variant-numeric: tabular-nums;
+}
+
+.bh {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.bh-vignette {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(255, 30, 30, 0.5) 100%);
+}
+
+.bh-panel {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 230px;
+  padding: 14px 16px;
+  font-size: 12px;
+  background: rgba(12, 14, 22, 0.72);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.bh-label {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #7a8296;
+}
+
+.bh-mass {
+  margin: 2px 0 10px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #ffd9b0;
+}
+
+.bh-meter {
+  height: 4px;
+  margin-bottom: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.bh-meter span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #ff7a3d, #ffe0a0, #a8c4ff);
+}
+
+.bh-panel dl,
+.bh-card dl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  color: #9aa3b5;
+}
+
+.bh-panel dd,
+.bh-card dd {
+  margin: 0;
+  text-align: right;
+  color: #e8ecf4;
+}
+
+/* Core labels: under the core on screen, an arrow at the edge when it's off screen. */
+.bh-marker {
+  --tint: #ff6b6b;
+
+  position: absolute;
+  top: 0;
+  left: 0;
+  font-size: 11px;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.bh-marker[hidden] {
+  display: none;
+}
+
+.bh-marker.prey {
+  --tint: #5ee7ff;
+}
+
+.bh-marker i {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: none;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 6px 0 6px 11px;
+  border-color: transparent transparent transparent var(--tint);
+}
+
+.bh-marker.offscreen i {
+  display: block;
+}
+
+.bh-marker span {
+  display: block;
+  padding: 2px 7px;
+  color: #c8d0e0;
+  background: rgba(8, 10, 16, 0.65);
+  border: 1px solid color-mix(in srgb, var(--tint) 45%, transparent);
+  border-radius: 4px;
+}
+
+.bh-marker b {
+  font-weight: 600;
+  color: var(--tint);
+}
+
+/* Rivals roam, so their labels get a dashed outline and a tag. */
+.bh-marker.rival span {
+  border-style: dashed;
+}
+
+.bh-marker small {
+  margin-right: 5px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tint);
+}
+
+.bh-toasts {
+  position: absolute;
+  left: 50%;
+  bottom: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transform: translateX(-50%);
+}
+
+.bh-toast {
+  padding: 8px 14px;
+  font-size: 13px;
+  color: #d8deea;
+  background: rgba(12, 14, 22, 0.8);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  white-space: nowrap;
+  animation: bh-toast 4.5s ease forwards;
+}
+
+.bh-toast b {
+  color: #ffd9b0;
+}
+
+@keyframes bh-toast {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  8%,
+  85% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Above the intro panel, but only the card takes clicks, so you can still orbit the camera around it. */
+.bh-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 11;
+  display: grid;
+  place-items: center;
+  background: rgba(2, 2, 8, 0.5);
+  pointer-events: none;
+}
+
+.bh-overlay[hidden] {
+  display: none;
+}
+
+.bh-card {
+  width: min(360px, calc(100vw - 32px));
+  pointer-events: auto;
+  padding: 22px 24px;
+  background: rgba(12, 14, 22, 0.88);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+}
+
+.bh-card h2 {
+  margin-bottom: 6px;
+  font-size: 20px;
+}
+
+.bh-card p {
+  margin-bottom: 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #b8c0d0;
+}
+
+.bh-card dl {
+  margin-bottom: 18px;
+  font-size: 12px;
+}
+
+.bh-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.bh-actions button {
+  flex: 1;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: #fff;
+  background: rgba(110, 140, 255, 0.25);
+  border: 1px solid rgba(140, 165, 255, 0.6);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.bh-actions button:hover {
+  background: rgba(110, 140, 255, 0.4);
+}
