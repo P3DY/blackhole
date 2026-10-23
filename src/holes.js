@@ -23,7 +23,10 @@ export function createHole(kind, name, mass) {
     appetite: 0, // feedRate as a share of FULL_FEED: drives the photon ring and jets
     jetsDue: 0,
     edible: false, // lighter than you
+    tint: new THREE.Color(), // its photon ring's color, easing toward whichever side of you it's on
     ring: null,
+    flash: 0, // 1 when it has just changed sides, fading to 0
+    cuedAt: -Infinity, // game time it last did
     ai: null, // rivals only: { mode, galaxy, timer, rest }
   };
 }

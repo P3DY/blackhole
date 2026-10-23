@@ -36,16 +36,21 @@ Stars within reach are pulled out of their galaxy into your **accretion disk**. 
 - **You're always shrinking.** Hawking radiation costs you 0.3% of your mass per second (`HAWKING`), and boosting burns another 1.5% per second (`BOOST_COST`) while you push. Both scale with your mass, so stop eating for long and lighter rivals and cores start to outweigh you. Rivals and cores don't radiate.
 - If more than 1,500 stars are within reach in one frame, the rest are captured over the next few frames, nearest first.
 
-## Danger rings and the vignette
+## Who outweighs whom: tints, rings and the vignette
 
-Every live black hole heavier than you gets a **red ring**. Its radius is the larger of two distances:
+Every black hole shows which side of you it's on, in the world rather than the HUD (constants in `TINTS`, `RINGS` and `SIDE_CHANGE`):
 
-- the **point of no return**, where its pull beats your full thrust: `√(PULL · S_hole³ / (THRUST · S_you))`
-- for a rival, its **reach**, inside which it captures you outright.
+- **Photon ring tint.** A heavier black hole's photon ring glows red, a lighter one's glows pale blue, and yours stays warm white. This works at any zoom, even where the hole is only a few pixels wide. A core sitting on a bright galactic bulge mostly shows the bulge it lenses, so its ring (below) says more.
+- **Red ring** around anything heavier. Its radius is the larger of two distances:
+  - the **point of no return**, where its pull beats your full thrust: `√(PULL · S_hole³ / (THRUST · S_you))`
+  - for a rival, its **reach**, inside which it captures you outright.
+- **Dashed blue ring** around anything lighter, at 2.5 of its shadow radii (`RINGS.prey`).
 
-Rings fade out with distance. The screen edges glow red as you get close to one.
+A red ring is at its brightest from 3 of its radii in, and fades to a floor (`RINGS.floor`, 0.3) by 12. Prey rings stay at that floor. Both fade out between 16 and 32 of your reach radii from you (`RINGS.range`), and arrows at the screen edge take over for black holes off screen. However far you zoom out, a ring is drawn at least 12 px in radius (`RINGS.minPixels`) and 1.5 px thick (`RINGS.width`). The screen edges glow red as you get close to something heavier.
 
-The first time you near a heavier black hole, time slows almost to a stop while its ring pulses and a label explains it. The first time you near a lighter one, the same happens with a blue ring around it and a ring showing your reach (see [Hints](#hints)).
+**Changing sides.** You lose mass all the time and gain it in bursts, and so do rivals, so the balance can tip either way. When a black hole within ring range changes sides, its ring flares and swells for 1.2 s (`SIDE_CHANGE.flash`), its tint crossfades, and two hummed notes play: up a fourth when it becomes prey, down a tritone when it becomes a threat. The same black hole stays quiet for 4 s of game time after that (`SIDE_CHANGE.cooldown`), so two holes trading places at a near tie don't keep chiming.
+
+The first time you near a heavier black hole, time slows almost to a stop while its ring pulses and a label explains it. The first time you near a lighter one, the same happens with its blue ring and a ring showing your reach (see [Hints](#hints)).
 
 ## Galaxy tiers: why the game scales
 
@@ -133,7 +138,7 @@ The thresholds are in `LESSONS` and `SLOW_MOTION` (see [tuning.md](tuning.md#hin
 
 ## HUD
 
-The HUD is deliberately sparse. Apart from the hints, nothing pops up during play. Weight relations show in the world itself: a red ring means heavier than you, and no ring means prey.
+The HUD is deliberately sparse. Apart from the hints, nothing pops up during play. Weight relations show in the world itself: red photon rings and solid red rings mean heavier than you, blue photon rings and dashed blue rings mean prey (see [Who outweighs whom](#who-outweighs-whom-tints-rings-and-the-vignette)).
 
 - **Top right:** your mass and, under it, the feeding meter.
 - **Edge arrows:** for each of the five nearest live black holes that is off screen, an arrow pinned to the screen edge points toward it. Blue means you outweigh it, red means it outweighs you.
@@ -161,6 +166,7 @@ Sound also carries information, so the screen can stay quiet:
 - **Wind** gets brighter the faster you drift, and a low **rumble** gets heavier as you grow.
 - **Feeding** sounds like a swirl over a sound you pick in the settings: tuned breath (the default), a drone, rain, a circling whoosh, gulps, or the original crackle. Each star crossing your shadow also plays a soft low hum.
 - **Danger:** as you near something heavier, a low growl rises and throbs faster, and the music backs off. It tracks the same `danger` value as the red vignette.
+- **Changing sides:** when a black hole near you becomes prey, two hummed notes rise a fourth. When it comes to outweigh you, they fall a tritone.
 - **Swallowing** a core or rival: a rush as it starts to fall in, then a deep thud and a rising chord.
 - **Being swallowed:** a falling, wavering tone. Then the world goes muffled and the music slows to a crawl until you restart.
 - **Somewhere else,** when two other black holes merge, you hear a muffled thud, panned toward it and quieter the further away it is.

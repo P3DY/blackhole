@@ -34,7 +34,7 @@ There are three kinds of object:
 | Object | Moves? | Made by | Drawn as |
 |--------|--------|---------|----------|
 | **Fields**: 12 galaxies, 5 nebulae, 1 set of loose stars | Galaxies rotate in place | `fields.js` | One `THREE.Points` each, sharing one `ShaderMaterial` |
-| **Black holes**: 1 player, 5 rivals, 12 cores | Player and rivals roam; cores are fixed | `holes.js` | Nothing directly. The lens pass draws them, plus a red `RingGeometry` mesh when they're dangerous |
+| **Black holes**: 1 player, 5 rivals, 12 cores | Player and rivals roam; cores are fixed | `holes.js` | Nothing directly. The lens pass draws them, with a photon ring tinted by which side of you they're on, plus a flat ring quad near you (see [Rings](#rings-ringfragmentshader)) |
 | **Particles in flight**: accretion disks and jets | Simulated on the CPU | `disk.js`, `jets.js` | One `THREE.Points` each, for all black holes combined |
 
 The order of the `holes` array matters: `[player, ...rivals, ...cores]`. Each hole's index is stored on it, and disk particles refer to their black hole by that index. The player comes first, so it wins ties over stars.
@@ -61,9 +61,14 @@ Because steps 2 and 3 share one random stream, any change that consumes a differ
 6. **Rotate fields.** Each galaxy's angle advances by its spin rate.
 7. **Capture.** Builds the list of *warpers*: live roamers, at most `MAX_WARPS`. For each one, it queries every nearby field's grid and moves stars within reach into the disk.
 8. **Disk update.** Advances every disk particle and absorbs those inside their hole's shadow. It returns the absorbed mass and count per hole index. Rivals' gains are multiplied by `RIVAL_APPETITE`, and the smoothed feed rate drives `appetite` and the jets. Then the player loses `HAWKING` of its mass per second, plus `BOOST_COST` if `steer()` flagged it as boosting.
-9. **Rings and win check.** Recomputes who outweighs you, updates the danger rings and the vignette strength, and checks for victory. While a hint is explaining a black hole (`hints.focus`, from last frame), its ring pulses: red as usual if it outweighs you, or blue and close around it if it doesn't, with a pale ring at your reach as well.
+9. **Sides, rings and win check.** Recomputes who outweighs you and the vignette strength, and checks for victory. For each black hole it:
+   - eases `hole.tint` toward its side's photon ring color (`TINTS`; all neutral once you're not alive), in real time
+   - places its ring near you: solid red at its danger radius if it outweighs you, dashed blue at `RINGS.prey` shadow radii if not, never under `RINGS.minPixels` on screen (measured with last frame's camera)
+   - notices when it changes sides within ring range. Its `flash` goes to 1 and fades over `SIDE_CHANGE.flash` real seconds, brightening and swelling the ring, and `audio.sideChange()` plays once per frame at most. `hole.cuedAt` keeps it quiet for `SIDE_CHANGE.cooldown` seconds of game time.
+
+   While a hint is explaining a black hole (`hints.focus`, from last frame), its ring pulses, with a pale ring at your reach as well for a lighter one.
 10. **Camera.** Follows the player, or whatever swallowed it, and smoothly scales the orbit offset as you grow. This keeps the user's chosen orbit angle and zoom. `minDistance` and `maxDistance` are set each frame to 2.5×–40× your reach. The backdrop starfield is moved to the camera so it reads as infinitely far away.
-11. **Uniforms.** Writes the warpers into `uWarps` and the on-screen black holes into the lens pass's `uLenses`. `uTime` is `elapsed` minus the time slow motion has cost, so the stars twinkle on game time.
+11. **Uniforms.** Writes the warpers into `uWarps` and the on-screen black holes into the lens pass's `uLenses`, with their tints in `uTints`. `uTime` is `elapsed` minus the time slow motion has cost, so the stars twinkle on game time.
 12. **HUD, hints and audio.** Updates the mass readout, the feeding meter, the edge arrows and the vignette. `hints.update()` advances the lessons and any slowed moment and returns the time scale for the next frame. Then the audio layers get the danger, your feeding rate, speed and mass, the stars you absorbed this frame, and the time scale. See [Audio](#audio-audiojs).
 
 `render(delta)` then calls `composer.render()`.
@@ -97,8 +102,15 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
   - applies the **point-lens equation**, so light at distance *d* comes from *d − E²/d*, with *E* = 1.3 × shadow. This wraps the background into an Einstein ring.
   - fades the deflection out between 6× and 14× *E*
   - blacks out the shadow
-  - adds a photon ring whose brightness follows `appetite`.
+  - adds a photon ring whose brightness follows `appetite`, in the hole's color from `uTints`: red if it outweighs you, blue if not, warm for you.
 - UVs that bend off screen are mirrored back rather than clamped, which avoids smeared edges.
+
+### Rings (`ringFragmentShader`)
+
+- Every black hole but you has a ring mesh, plus one more for your reach during a hint. They share one quad lying on the galactic plane (±1.3, so a ring of radius 1 fits with room for its stroke), and each has its own `ShaderMaterial`, so its color, opacity and dashes are uniforms.
+- The stroke is at least `uWidth` pixels thick (`RINGS.width` × the pixel ratio), using `fwidth()` of the distance from the centre, or 3% of the radius when that's thicker. So a ring stays crisp seen edge-on or from far away.
+- `uDashes` > 0 cuts it into that many dashes (`RINGS.dashes`), which is how prey rings differ from danger rings without relying on color.
+- The CPU keeps the radius on screen at least `RINGS.minPixels`: `leastRingRadius()` turns that into world units at the hole's depth.
 
 ## Data structures
 
@@ -129,7 +141,7 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 | Disk particles (max) | 32,768 |
 | Jet particles (max) | 4,096 |
 | Backdrop stars | 3,000 |
-| Draw calls for the scene | 21 (18 fields, disk, jets, backdrop) + 1 per visible ring (danger rings, and the reach ring during a hint) |
+| Draw calls for the scene | 21 (18 fields, disk, jets, backdrop) + 1 per visible ring (rings around black holes near you, and the reach ring during a hint) |
 | Full-screen passes | lens, bloom (several mip levels), output |
 
 - **CPU cost** is dominated by `disk.update()`, which is O(live disk particles), and by capture queries, which only touch cells near each roamer. Gravity is O(roamers × holes), which is 6 × 18.
@@ -162,7 +174,7 @@ The game starts with no introduction. `createHints({ controls })` teaches it as 
   | Moment | Starts when | Label | In the world |
   |--------|-------------|-------|--------------|
   | heavier | Within `SLOW_MOTION.heavier` (6) of its danger radii while closing in and on screen, or half that regardless | "Heavier than you · Don't cross its red ring" | Its red ring pulses |
-  | lighter | Within `SLOW_MOTION.lighter` (6) of your reach radii, and on screen | "Lighter than you · Bring it inside your reach to swallow it" | A blue ring circles it at 2.5 shadow radii, and a pale ring with a "your reach" tag marks your reach |
+  | lighter | Within `SLOW_MOTION.lighter` (6) of your reach radii, and on screen | "Lighter than you · Bring it inside your reach to swallow it" | Its dashed blue ring pulses, and a pale ring with a "your reach" tag marks your reach |
 
   - The time scale eases down over `ease` (0.3 s of real time), holds for `hold` (3.5 s), then recovers over `recover` (0.8 s). It's interpolated as `scale^depth` (depth 0 to 1), so the change feels even. You can still steer and orbit the camera meanwhile; steering just acts in slow motion.
   - "On screen" means the hole's centre is inside 90% of the view, so on a narrow screen a hole at the edge waits until you turn toward it.
@@ -228,10 +240,11 @@ Every sound is synthesised with the Web Audio API. There are no audio files, and
     | `gulps` | Soft low notes sliding down into place, 1 to 4 a second as feeding rises |
 
   - Which one plays is the player's choice. The default is `AUDIO.feeding` (`tuned`). The **Feeding** section of the settings menu picks another, which is kept in `localStorage`. Picking one plays it for 2.5 s as if you were feeding hard, so you hear what you chose without flying into stars. Their levels were matched by measurement, allowing for low sounds seeming quieter, so switching doesn't change how loud feeding is.
-- **Events.** `fall()` and `swallow()` in `game.js` call these:
+- **Events.** `fall()` and `swallow()` in `game.js` call these, and step 9 of the frame calls `sideChange`:
 
   | Call | When | Sound |
   |------|------|-------|
+  | `sideChange` | A black hole near you changes sides | Two hummed notes: A3 up to D4 if it's now prey, A3 down to E♭3 if it now outweighs you |
   | `pull` | A black hole starts falling into you | A rising rush |
   | `devour` | You swallow it | A falling sub-bass thud, plus a hummed Dsus2 chord rolling upward |
   | `fall` | You start falling in | A wavering, falling tone over a building roar |

@@ -27,12 +27,15 @@ import {
   MAX_WARPS,
   PULL,
   REACH,
+  RINGS,
   RIVAL_APPETITE,
   RIVAL_PACE,
   SHADOW_SIZE,
+  SIDE_CHANGE,
   STAR_SIZE,
   START_MASS,
   THRUST,
+  TINTS,
   UNIVERSE_SEED,
   arrivalMass,
   shadowOf,
@@ -43,6 +46,8 @@ import {
   jetVertexShader,
   lensFragmentShader,
   passVertexShader,
+  ringFragmentShader,
+  ringVertexShader,
   starFragmentShader,
 } from './shaders.js';
 import { planUniverse } from './universe.js';
@@ -119,16 +124,29 @@ export function createGame({ renderer, camera, controls }) {
   const holes = [...roamers, ...cores];
   holes.forEach((hole, index) => (hole.index = index));
 
-  // Rings mark how close you can get to a black hole that outweighs you. While a hint explains a lighter one,
-  // its ring turns blue and circles it instead, and another ring shows your reach.
-  const ringGeometry = new THREE.RingGeometry(0.97, 1, 128).rotateX(-Math.PI / 2);
+  // Every black hole shows which side of you it's on. Its photon ring is tinted, and near you it gets a ring:
+  // solid red at how close you can get to it if it outweighs you, dashed blue around it if you outweigh it.
+  // While a hint explains a lighter one, another ring shows your reach.
+  const ringGeometry = new THREE.PlaneGeometry(2.6, 2.6).rotateX(-Math.PI / 2); // ringFragmentShader draws the ring
   const ringMaterial = (color) =>
-    new THREE.MeshBasicMaterial({ color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
-  const DANGER_TINT = new THREE.Color('#ff4040');
-  const PREY_TINT = new THREE.Color('#5ee7ff');
+    new THREE.ShaderMaterial({
+      vertexShader: ringVertexShader,
+      fragmentShader: ringFragmentShader,
+      uniforms: {
+        uColor: { value: new THREE.Color(color) },
+        uOpacity: { value: 0 },
+        uWidth: { value: RINGS.width * pixelRatio },
+        uDashes: { value: 0 },
+      },
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+  const DANGER_COLOR = new THREE.Color(RINGS.heavier);
+  const PREY_COLOR = new THREE.Color(RINGS.lighter);
   for (const hole of holes) {
     if (hole === player) continue;
-    hole.ring = new THREE.Mesh(ringGeometry, ringMaterial(DANGER_TINT));
+    hole.ring = new THREE.Mesh(ringGeometry, ringMaterial(DANGER_COLOR));
     scene.add(hole.ring);
   }
   const reachRing = new THREE.Mesh(ringGeometry, ringMaterial('#cfe0ff'));
@@ -153,6 +171,7 @@ export function createGame({ renderer, camera, controls }) {
       uniforms: {
         tDiffuse: { value: null },
         uLenses: { value: Array.from({ length: MAX_LENSES }, () => new THREE.Vector4()) },
+        uTints: { value: Array.from({ length: MAX_LENSES }, () => new THREE.Color()) },
         uLensCount: { value: 0 },
         uAspect: { value: 1 },
         uPixel: { value: 0.001 },
@@ -222,10 +241,13 @@ export function createGame({ renderer, camera, controls }) {
         appetite: 0,
         jetsDue: 0,
         boosting: false,
+        flash: 0,
+        cuedAt: -Infinity,
       });
       hole.velocity.set(0, 0, 0);
       hole.thrust.set(0, 0, 0);
       hole.edible = hole.mass < START_MASS;
+      hole.tint.copy(tintOf(hole));
     }
     player.position.set(plan.start.x, 0, plan.start.z);
     cores.forEach((core, i) => core.position.set(plan.galaxies[i].x, 0, plan.galaxies[i].z));
@@ -540,11 +562,26 @@ export function createGame({ renderer, camera, controls }) {
 
   // --- Rendering helpers --------------------------------------------------------
 
+  const PHOTON = { you: new THREE.Color(TINTS.you), heavier: new THREE.Color(TINTS.heavier), lighter: new THREE.Color(TINTS.lighter) };
+
+  // The color `hole`'s photon ring is heading for: which side of you it's on, or neutral once you're gone.
+  function tintOf(hole) {
+    if (hole === player || player.state !== 'alive') return PHOTON.you;
+    return hole.edible ? PHOTON.lighter : PHOTON.heavier;
+  }
+
   // Writes a black hole into the lens pass's uniforms, if it's big enough on screen to matter.
   const lenses = lensPass.uniforms.uLenses.value;
+  const tints = lensPass.uniforms.uTints.value;
   const tanHalfFov = () => Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
 
-  function addLens(position, shadow, brightness) {
+  // The smallest radius a ring at `position` can have and still be RINGS.minPixels across on screen.
+  function leastRingRadius(position) {
+    const depth = -projected.copy(position).applyMatrix4(camera.matrixWorldInverse).z;
+    return depth > camera.near ? (2 * RINGS.minPixels * depth * tanHalfFov()) / window.innerHeight : 0;
+  }
+
+  function addLens(position, shadow, brightness, tint) {
     const count = lensPass.uniforms.uLensCount;
     if (count.value >= MAX_LENSES || shadow <= 0) return;
 
@@ -561,6 +598,7 @@ export function createGame({ renderer, camera, controls }) {
     const margin = radius * EINSTEIN * 14; // where its deflection fades out
     if (u < -margin / camera.aspect || u > 1 + margin / camera.aspect || v < -margin || v > 1 + margin) return;
 
+    tints[count.value].copy(tint);
     lenses[count.value++].set(u, v, radius, brightness);
   }
 
@@ -625,36 +663,58 @@ export function createGame({ renderer, camera, controls }) {
         stats.peakMass = Math.max(stats.peakMass, player.mass);
       }
 
-      // Who outweighs whom, the rings around anything heavier, and how close you are to one. A hint lights up
-      // the black hole it's explaining (last frame's, which is close enough).
+      // Who outweighs whom, and how close you are to anything heavier. Photon rings take on the tint of their
+      // side of you, and near you each black hole gets a ring: red at the danger radius of anything heavier,
+      // dashed blue around anything lighter. A hint lights up the black hole it's explaining (last frame's,
+      // which is close enough).
       let danger = 0;
+      let sideChange = null; // whether the black hole that just changed sides is now prey, if one did
       const hint = hints.focus;
+      const playing = player.state === 'alive';
+      const reach = REACH * player.size;
       for (const hole of holes) {
         if (hole === player) continue;
-        hole.edible = player.mass > hole.mass;
-        const lit = hint?.hole === hole ? hint.glow : 0;
-
-        const showRing = hole.state === 'alive' && (!hole.edible || lit > 0) && player.state === 'alive';
-        hole.ring.visible = showRing;
-        if (!showRing) continue;
-        hole.ring.position.copy(hole.position);
-        hole.ring.material.color.copy(hole.edible ? PREY_TINT : DANGER_TINT);
-        if (hole.edible) {
-          hole.ring.scale.setScalar(hint.radius);
-          hole.ring.material.opacity = 0.8 * lit;
-          continue;
-        }
-        const radius = dangerRadius(hole, player);
+        const edible = player.mass > hole.mass;
+        const alive = hole.state === 'alive';
         const distance = planarDistance(hole.position, player.position);
-        hole.ring.scale.setScalar(radius);
-        hole.ring.material.opacity = Math.max(0.7 * (1 - smoothstep(distance, radius * 3, radius * 12)), lit);
-        danger = Math.max(danger, (radius / Math.max(distance, 1e-6)) ** 2);
+        const near = 1 - smoothstep(distance, reach * RINGS.range[0], reach * RINGS.range[1]);
+
+        // Changing sides near you: its ring flares, and a tone rises (now prey) or falls (now a threat).
+        if (edible !== hole.edible && alive && playing && near > 0 && stats.time - hole.cuedAt > SIDE_CHANGE.cooldown) {
+          hole.flash = 1;
+          hole.cuedAt = stats.time;
+          sideChange ??= edible;
+        }
+        hole.edible = edible;
+        hole.flash = Math.max(0, hole.flash - frameDelta / SIDE_CHANGE.flash);
+        hole.tint.lerp(tintOf(hole), 1 - Math.exp(-6 * frameDelta));
+
+        let radius = RINGS.prey * hole.size;
+        let opacity = RINGS.floor * near;
+        if (!edible) {
+          radius = dangerRadius(hole, player);
+          opacity = Math.max(0.7 * (1 - smoothstep(distance, radius * 3, radius * 12)), opacity);
+          if (alive) danger = Math.max(danger, (radius / Math.max(distance, 1e-6)) ** 2);
+        }
+        const lit = hint?.hole === hole ? hint.glow : 0;
+        opacity = Math.max(opacity, lit, hole.flash);
+
+        const { ring } = hole;
+        ring.visible = alive && playing && opacity > 0;
+        if (!ring.visible) continue;
+        ring.position.copy(hole.position);
+        ring.scale.setScalar(Math.max(radius, leastRingRadius(hole.position)) * (1 + 0.25 * hole.flash));
+        const { uniforms } = ring.material;
+        uniforms.uColor.value.copy(edible ? PREY_COLOR : DANGER_COLOR);
+        uniforms.uOpacity.value = opacity;
+        uniforms.uDashes.value = edible ? RINGS.dashes : 0;
       }
-      reachRing.visible = hint?.kind === 'lighter' && player.state === 'alive';
+      if (sideChange !== null) audio.sideChange(sideChange);
+      reachRing.visible = hint?.kind === 'lighter' && playing;
       if (reachRing.visible) {
         reachRing.position.copy(player.position);
         reachRing.scale.setScalar(REACH * player.size);
-        reachRing.material.opacity = 0.6 * hint.glow;
+        reachRing.material.uniforms.uOpacity.value = 0.6 * hint.glow;
       }
 
       if (!won && player.state === 'alive' && holes.every((hole) => hole === player || hole.state === 'gone')) {
@@ -687,7 +747,7 @@ export function createGame({ renderer, camera, controls }) {
       for (const hole of holes) {
         if (hole.state === 'gone') continue;
         const brightness = hole.kind === 'core' ? 0.35 : (hole === player ? 0.5 : 0.4) + 2 * hole.appetite;
-        addLens(hole.position, hole.size, brightness);
+        addLens(hole.position, hole.size, brightness, hole.tint);
       }
 
       if (player.state !== 'alive') danger = 0;

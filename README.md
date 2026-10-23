@@ -54,7 +54,7 @@ Tilt needs a motion sensor and a page served over https (iOS asks for permission
 There's no intro screen: the game starts straight away. Each control is shown as a small looping gesture until you've used it, and the first time you near a black hole heavier or lighter than you, time slows almost to a stop while a label explains it.
 
 - Drift into stars to capture them. They spiral into your accretion disk and add to your mass when they cross your shadow.
-- **Red rings** mark black holes that outweigh you, at the distance where their pull beats your thrust. Cross one and you won't get back out.
+- **Red** means heavier than you, **blue** means prey. Each black hole's photon ring glows in its color, and near you, heavier ones get a solid red ring at the distance where their pull beats your thrust. Cross one and you won't get back out. Lighter ones get a dashed blue ring. When one changes sides, its ring flares and a two-note tone rises or falls.
 - Every galaxy has a **supermassive core**. Once you outweigh it, fly into it to take its mass.
 - Five **rivals** roam between galaxies and eat the same stars. They keep only 30% of what they eat, so you can outgrow them. Rivals hunt you while you're smaller (boosting outruns them) and flee once you're bigger.
 - **Hawking radiation** slowly shrinks you (0.3% of your mass per second), and boosting burns another 1.5% per second, so keep eating.
@@ -78,7 +78,7 @@ src/
   holes.js          black hole objects and the shared gravity helpers
   disk.js           pooled accretion-disk particle simulation
   jets.js           ring-buffered relativistic-jet particles
-  shaders.js        all GLSL: star fields, disks, jets, lensing pass
+  shaders.js        all GLSL: star fields, disks, jets, rings, lensing pass
   pointer.js        mouse and touch steering: joystick, follow-finger and tilt modes
   settings.js / .css the gear menu that the audio and touch settings add their rows to
   audio.js          synthesised music loop, ambience and sound effects

@@ -22,6 +22,8 @@ const MUSIC_RATE = 32000; // it's dark music, so 16 kHz of bandwidth is plenty
 const MUSIC_SEED = 40; // its own stream: the universe's must not be touched
 const PENTATONIC = [50, 53, 55, 57, 60, 62]; // D minor pentatonic, D3–D4: a hum for each star you absorb
 const REWARD = [50, 57, 62, 64, 69, 74]; // an open Dsus2, hummed upward when you swallow a black hole
+const SIDE_UP = [57, 62]; // A3 up to D4: a black hole near you is now lighter than you…
+const SIDE_DOWN = [57, 51]; // …or A3 down to E♭3: it now outweighs you
 const OPEN = 20000; // the horizon filter's cutoff while you're alive…
 const SLOWED = 900; // …and while a hint has slowed time right down
 
@@ -490,6 +492,15 @@ export function createAudio({ camera, settings }) {
       boom(shot(0.5, 0, size), t, { from: 120, to: 32, length: 2.2, level: 0.9, grit: 0.7, bright: 2500 });
       const chord = shot(0.8, 0, size);
       REWARD.forEach((note, i) => hum(ctx, chord, t + 0.05 + i * 0.08, midi(note), 0.08, 0.4, 3.5));
+    },
+
+    // A black hole near you changed sides: two hummed notes, up a fourth if you now outweigh it, or down a
+    // tritone if it now outweighs you.
+    sideChange(prey) {
+      if (!running()) return;
+      const t = ctx.currentTime;
+      const out = shot(0.6);
+      (prey ? SIDE_UP : SIDE_DOWN).forEach((note, i) => hum(ctx, out, t + i * 0.14, midi(note), 0.1, 0.04, 1.4));
     },
 
     // You crossed a shadow, or something heavier caught you. Time slows and the universe goes dark.

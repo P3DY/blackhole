@@ -82,6 +82,27 @@ export const STAR_SIZE = 14; // point size scale, multiplied by the device pixel
 export const MAX_LENSES = 24;
 export const EINSTEIN = 1.3; // Einstein-ring radius, in shadow radii
 
+// --- Who outweighs whom -----------------------------------------------------------
+//
+// Every black hole shows whether it outweighs you, in the world rather than the HUD. Its photon ring takes a
+// tint: `heavier` or `lighter`, while yours stays `you`. Near you it also gets a ring: solid red at its danger
+// radius if it's heavier, dashed blue at `RINGS.prey` shadow radii if it's lighter.
+export const TINTS = { you: '#ffddad', heavier: '#ff6a50', lighter: '#9ad8ff' };
+export const RINGS = {
+  heavier: '#ff4040',
+  lighter: '#5ee7ff',
+  prey: 2.5, // shadow radii from a lighter black hole's centre
+  dashes: 24,
+  floor: 0.3, // a prey ring's opacity, and the least a danger ring fades to…
+  range: [16, 32], // …until it's this far from you, in your reach radii, where rings fade out
+  minPixels: 12, // a ring is never drawn smaller than this radius on screen…
+  width: 1.5, // …or thinner than this many pixels
+};
+// When a black hole near you changes sides (you outgrow it, or it outgrows you), its ring flares for `flash`
+// seconds and a tone rises or falls. The same black hole won't do it again for `cooldown` seconds of game time,
+// so two holes trading places at a tie don't keep chiming.
+export const SIDE_CHANGE = { flash: 1.2, cooldown: 4 };
+
 // --- Universe ---------------------------------------------------------------------
 
 export const PALETTES = [

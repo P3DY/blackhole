@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BOOST, LESSONS, REACH, SLOW_MOTION, THRUST } from './config.js';
+import { BOOST, LESSONS, REACH, RINGS, SLOW_MOTION, THRUST } from './config.js';
 import { dangerRadius, planarDistance } from './holes.js';
 import './hints.css';
 
@@ -13,7 +13,6 @@ const MOMENTS = {
   heavier: ['Heavier than you', 'Don’t cross its red ring'],
   lighter: ['Lighter than you', 'Bring it inside your reach to swallow it'],
 };
-const PREY_RING = 2.5; // shadow radii: the ring drawn around a lighter black hole while it's explained
 
 const CURSOR = '<svg class="bh-cursor" viewBox="0 0 14 21" aria-hidden="true"><path d="M1 1v16l4-4 3 6.5 2.5-1-3-6.5H13z" /></svg>';
 const SWING = '<svg class="bh-swing" viewBox="0 0 60 18" aria-hidden="true"><path d="M7 14Q30-2 53 14M3 8l4 6 6-2M57 8l-4 6-6-2" /></svg>';
@@ -228,7 +227,7 @@ export function createHints({ controls }) {
     const depth = age < ease ? smoothstep(age, 0, ease) : 1 - smoothstep(age, ease + hold, ease + hold + recover);
     focus.kind = kind;
     focus.hole = hole;
-    focus.radius = kind === 'heavier' ? dangerRadius(hole, player) : PREY_RING * hole.size;
+    focus.radius = kind === 'heavier' ? dangerRadius(hole, player) : RINGS.prey * hole.size;
     focus.glow = depth * (0.75 + 0.25 * Math.sin(clock * 6));
 
     camera.getWorldDirection(forward).setY(0).normalize();

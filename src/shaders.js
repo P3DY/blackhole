@@ -130,6 +130,7 @@ export const lensFragmentShader = /* glsl */ `
 
   uniform sampler2D tDiffuse;
   uniform vec4 uLenses[MAX_LENSES]; // xy: center (uv) · z: shadow radius (fraction of screen height) · w: ring brightness
+  uniform vec3 uTints[MAX_LENSES]; // photon ring color: whether it outweighs you
   uniform int uLensCount;
   uniform float uAspect;
   uniform float uPixel; // one pixel, as a fraction of screen height
@@ -140,7 +141,7 @@ export const lensFragmentShader = /* glsl */ `
     vec2 toScreen = vec2(uAspect, 1.0); // uv → units of screen height, so circles stay round
     vec2 deflection = vec2(0.0);
     float shadow = 1.0;
-    float glow = 0.0;
+    vec3 glow = vec3(0.0);
 
     for (int i = 0; i < MAX_LENSES; i++) {
       if (i >= uLensCount) break;
@@ -161,14 +162,50 @@ export const lensFragmentShader = /* glsl */ `
       shadow *= outside;
 
       float ring = (d - radius * 1.04) / (radius * 0.05 + uPixel);
-      glow += lens.w * outside * (exp(-ring * ring) + 0.25 * exp(-(d - radius) / (radius * 0.6)));
+      glow += uTints[i] * lens.w * outside * (exp(-ring * ring) + 0.25 * exp(-(d - radius) / (radius * 0.6)));
     }
 
     vec2 uv = vUv + deflection / toScreen;
     uv = 1.0 - abs(1.0 - abs(uv)); // mirror at the screen edges instead of smearing
 
-    vec3 color = texture2D(tDiffuse, uv).rgb * shadow + glow * vec3(1.0, 0.72, 0.42);
+    vec3 color = texture2D(tDiffuse, uv).rgb * shadow + glow;
     gl_FragColor = vec4(color, 1.0);
+  }
+`;
+
+// Rings lying flat on the galactic plane, around a black hole or at your reach. The quad spans ±1.3 and the
+// ring sits at radius 1, at least uWidth pixels thick however far away it is, and dashed if uDashes > 0.
+export const ringVertexShader = /* glsl */ `
+  varying vec2 vLocal;
+
+  void main() {
+    vLocal = position.xz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+export const ringFragmentShader = /* glsl */ `
+  uniform vec3 uColor;
+  uniform float uOpacity;
+  uniform float uWidth; // the thinnest it's drawn, in pixels
+  uniform float uDashes; // how many dashes around it, or 0 for a solid ring
+
+  varying vec2 vLocal;
+
+  void main() {
+    float d = length(vLocal);
+    float pixel = fwidth(d); // one pixel, in units of the ring's radius
+    float halfWidth = max(0.5 * uWidth * pixel, 0.015);
+    float alpha = 1.0 - smoothstep(halfWidth - 0.5 * pixel, halfWidth + 0.5 * pixel, abs(d - 1.0));
+
+    if (uDashes > 0.0) {
+      float around = atan(vLocal.y, vLocal.x) / 6.2831853 * uDashes;
+      float soft = min(fwidth(around), 0.1); // fwidth jumps where atan wraps around
+      alpha *= smoothstep(0.2 - soft, 0.2 + soft, abs(fract(around) - 0.5));
+    }
+
+    gl_FragColor = vec4(uColor, alpha * uOpacity);
+    #include <colorspace_fragment>
   }
 `;
 

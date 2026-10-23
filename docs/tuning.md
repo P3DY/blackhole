@@ -81,6 +81,18 @@ If you raise `RIVAL_PACE.hunt`, `HUNT_TIME`, `HAWKING` or `BOOST_COST`, or lower
 
 Bloom is set where `UnrealBloomPass` is created in `game.js`: strength 0.75, radius 0.4, threshold 0.55.
 
+## Who outweighs whom
+
+| Constant | Default | Effect |
+|----------|--------:|--------|
+| `TINTS` | you `#ffddad` · heavier `#ff6a50` · lighter `#9ad8ff` | Photon ring colors: yours, and those of black holes heavier or lighter than you. |
+| `RINGS` | heavier `#ff4040` · lighter `#5ee7ff` · prey 2.5 · dashes 24 · floor 0.3 · range 16–32 · minPixels 12 · width 1.5 | Ring colors. `prey` is the dashed ring's radius around a lighter hole, in its shadow radii, and `dashes` how many dashes it has. `floor` is a prey ring's opacity and the least a danger ring fades to. `range` is where rings fade out, in your reach radii from you. `minPixels` and `width` are the smallest radius and stroke a ring is drawn with, in CSS pixels. |
+| `SIDE_CHANGE` | flash 1.2 · cooldown 4 | When a black hole within ring range changes sides, its ring flares for `flash` real seconds. After that it can't flare or chime again for `cooldown` seconds of game time. |
+
+- **Tints compete with bloom.** These are sRGB colors, and the lens pass works in linear light, where `#ff6a50` is much darker than the warm `#ffddad`. Threats' photon rings therefore bloom less than yours. Pick a brighter red and it drifts toward orange, which is harder to tell from your own ring.
+- **Keep `range` past what the default view shows.** By default the camera sits `CAMERA_DISTANCE` (8) reach radii from you, and the tilted view reaches further than that toward the horizon. Fade rings out much closer and black holes on screen lose them again. Fade them out much further and a zoomed-out view (up to 40 reach radii) fills with rings around distant cores.
+- Lower `SIDE_CHANGE.cooldown` and a hole that hovers right at your mass (you shrink between meals, it grows as it feeds) chimes more often.
+
 ## Sound
 
 | Constant | Default | Effect |
@@ -100,7 +112,7 @@ Bloom is set where `UnrealBloomPass` is created in `game.js`: strength 0.75, rad
 
 - **Leave room to react.** The heavier moment has to start far enough out that you can still turn away, because time slows but doesn't stop. Easing in and recovering cost about `0.5 · (ease + recover)` ≈ 0.55 s of game time, and the hold another `scale · hold` ≈ 0.14 s. Boosting straight in at 27 S/s, that's about 19 S. The starting galaxy's core has a danger radius of about 3 S, so its moment starts about 18 S out. Reverse as soon as the label appears and you still stop outside the ring. Lower `heavier`, or lengthen `ease` or `recover`, and you won't.
 - Raising `scale` makes the moments less of a freeze. Even at 0.04, a 3.5 s hold is 0.14 s of game time.
-- The labels' wording, the 2.5-shadow-radius ring around a lighter hole and the order of the control lessons are set in `hints.js`. The gestures' timing (one 4.4 s period) is in `hints.css`.
+- The labels' wording and the order of the control lessons are set in `hints.js`. The ring a moment lights up is the hole's own ring (see [Who outweighs whom](#who-outweighs-whom)). The gestures' timing (one 4.4 s period) is in `hints.css`.
 
 ## Capacity limits
 
