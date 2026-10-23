@@ -4,7 +4,9 @@ This document covers the rules of the game, how it scales as you grow, and how t
 
 ## The goal
 
-Be the last black hole. The universe holds **16 galaxies**, each with a supermassive core, and **7 rival** black holes. You win when every core and every rival is gone. Rivals can fall into cores too, so not everything has to go into you. After the victory card you can keep drifting.
+Outgrow the universe. You start in the **opening**, a hand-made stretch of 16 real galaxies, each with a supermassive core, and 7 rival black holes. Past it the universe goes on without end, built around you as you go (see [Past the opening](#past-the-opening-the-endless-universe)). It holds giant galaxies, then galaxy groups, clusters, superclusters and great walls, each scale bigger than the last.
+
+You win when you outweigh all the matter in the observable universe: `UNIVERSE_MASS`, 10²³ M☉, about tier 27.8. After the victory card you can keep drifting, out beyond the observable universe.
 
 You lose when something heavier swallows you. The game-over card shows your run's stats, and the camera follows whatever ate you. From there you can retry from your last [checkpoint](#checkpoints) or start over.
 
@@ -15,6 +17,7 @@ Every core or rival you swallow saves a checkpoint, as soon as it's safe: nothin
 - **Retry** goes back to the last checkpoint: every star, black hole, accretion disk and stat as it was then. **R** does the same, as does Retry on the game-over card or in the Game tab of the settings menu. With no checkpoint yet, it starts from the beginning.
 - **Start over** goes back to the beginning and throws the checkpoint away. In the settings menu it asks for a second press.
 - Only the last checkpoint is kept, and only until you reload the page.
+- What you changed in the endless universe is kept too, even in places you've left far behind: a retry finds the stars you'd eaten there still gone, and the cores you'd swallowed still missing.
 
 ## Mass, shadow and reach
 
@@ -93,6 +96,26 @@ For a galaxy of radius *G*:
 
 The universe comes from a fixed seed (`UNIVERSE_SEED`), so every visit has the same layout.
 
+The core of the Milky Way is **Sagittarius A\***, and Andromeda's is **M31\***, the names of the real black holes there (`CORE_NAMES`). Every other core is "the *galaxy* core".
+
+## Past the opening: the endless universe
+
+Past IC 1101 the universe keeps going, in rings around the opening. Ring *n* holds seven structures of about tier *n*, so whichever way you head outward you find things your size. Each ring is 1.6× wider than the last. The structures are built as you come near and let go once you're far away or have long outgrown them, but whatever you ate stays eaten. The details are in [architecture.md](architecture.md#the-endless-universe).
+
+The rules don't change. Each structure is worth what a galaxy of its size is (its core `CORE_MASS`, its stars `STARS_MASS` times the arrival mass). It sometimes has a gas cloud beside it, and it's surrounded by loose stars. What changes is what you're eating. From tier 8 up, the mass that each scale expects of you lines up with the real thing:
+
+| Rings | Scale | Looks like | Expected arrival mass | For comparison |
+|------:|-------|------------|----------------------:|----------------|
+| 7–11 | Giant galaxies | Spirals and ellipticals | 1.9×10¹⁰ M☉ at tier 7 | Tier 10 (1.3×10¹² M☉) is about the Milky Way with its dark matter |
+| 12–13 | Galaxy groups | A handful of galaxies, a little gas | 2.2×10¹³ M☉ | Groups weigh 10¹³–10¹⁴ M☉ |
+| 14–16 | Galaxy clusters | Dozens of galaxies crowding a giant, in hot gas | 3.7×10¹⁴ M☉ | Tier 15 (1.5×10¹⁵ M☉) is about the Virgo or Coma cluster |
+| 17–19 | Superclusters | Knots of galaxies strung on threads | 2.6×10¹⁶ M☉ | Tier 18 (10¹⁷ M☉) is about Laniakea, our own supercluster |
+| 20+ | Great walls | Long walls of knots and threads | 1.8×10¹⁸ M☉ | Tier 27.8 (10²³ M☉) is all the matter in the observable universe |
+
+**Real names.** Each scale draws on real objects of its kind: giant galaxies (NGC 1600, Cygnus A, Rubin's Galaxy…), Stephan's Quintet and the Leo Triplet, the Virgo, Coma and Bullet clusters, Laniakea and the Shapley Supercluster, the Sloan Great Wall and the Big Ring. Cores have their real black hole's name where it has one: the Virgo Cluster's core is **M87\***, the Coma Cluster's **NGC 4889\***, the Phoenix Cluster's **Phoenix A\***, and Laniakea's is **the Great Attractor**. When a scale runs out of real names, the rest get catalogue designations from their place in the sky, like `SDSS J123456.78+123456.7`, and so does everything beyond the observable universe.
+
+**Fading.** Things you've long outgrown fade away: anything 2.5 tiers below you starts to dim, and at 3.5 tiers it's gone and can't be eaten. The opening fades the same way once you've left it far behind.
+
 ## Rivals
 
 | Name | Home galaxy | Starting mass |
@@ -106,6 +129,8 @@ The universe comes from a fixed seed (`UNIVERSE_SEED`), so every visit has the s
 | Bakunawa | IC 1101 | 9,671 |
 
 A rival's starting mass is a share of its home galaxy's arrival mass. Sköll shares your starting galaxy, begins on the far side of it, and starts out lighter than you.
+
+**Past the opening**, about three structures in ten come with a rival of their own, 0.5–0.7 of their arrival mass. It appears the first time the structure is built, if fewer than 7 rivals are about. These rivals are named for real quasars, black holes feeding hard enough to outshine their galaxies: TON 618, 3C 273, 3C 48, OJ 287, S5 0014+81 and more, then `QSO J…` designations. A rival that isn't hunting you is let go once you've long outgrown it and it's out of sight, or once it's far behind. That makes room for new ones, and it's how the opening's rivals go once you leave it.
 
 ### Behaviour
 
@@ -158,7 +183,8 @@ The HUD is deliberately sparse. Apart from the hints, nothing pops up during pla
 - **Edge arrows:** for each of the five nearest live black holes that is off screen, an arrow pinned to the screen edge points toward it. Blue means you outweigh it, red means it outweighs you.
 - **Hints:** control gestures low in the middle of the screen, and labels over a black hole while time is slowed (see [Hints](#hints)).
 - **Checkpoint note:** a line under your mass for a few seconds when a checkpoint is saved.
-- **End card:** peak mass, stars, cores swallowed out of 16, rivals out of 7, and time.
+- **Place names:** at the top of the screen, the name of a galaxy or structure the first time you're inside it this run, and the name of a new scale ("Galaxy clusters") the first time your mass reaches it.
+- **End card:** peak mass, stars, cores swallowed, rivals swallowed, the largest structures you reached, and time.
 - **Settings:** a faint gear in the top-left corner opens a menu with tabs:
   - **Game:** Retry (**R**), with what it goes back to, and Start over.
   - **Sound:** switches for Sound, Music and Effects, and a choice of feeding sound. **M** toggles Sound.

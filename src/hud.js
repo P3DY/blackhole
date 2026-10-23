@@ -3,11 +3,27 @@ import './hud.css';
 
 const { smoothstep } = THREE.MathUtils;
 
-// One unit of mass is a million suns.
+const SCALES = [
+  [1e21, 'sextillion'],
+  [1e18, 'quintillion'],
+  [1e15, 'quadrillion'],
+  [1e12, 'trillion'],
+  [1e9, 'billion'],
+  [1e6, 'million'],
+];
+const SUPERSCRIPT = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+
+// One unit of mass is a million suns. Past sextillions it's written as a power of ten.
 export function formatMass(mass) {
   const solar = mass * 1e6;
-  if (solar >= 1e9) return `${(solar / 1e9).toFixed(solar >= 1e10 ? 1 : 2)} billion M☉`;
-  return `${(solar / 1e6).toFixed(solar >= 1e7 ? 1 : 2)} million M☉`;
+  if (solar >= 1e24) {
+    const power = Math.floor(Math.log10(solar));
+    const digits = [...String(power)].map((digit) => SUPERSCRIPT[digit]).join('');
+    return `${(solar / 10 ** power).toFixed(2)} × 10${digits} M☉`;
+  }
+  const [unit, word] = SCALES.find(([unit]) => solar >= unit) ?? SCALES[SCALES.length - 1];
+  const value = solar / unit;
+  return `${value.toFixed(value >= 10 ? 1 : 2)} ${word} M☉`;
 }
 
 function formatTime(seconds) {
@@ -15,21 +31,23 @@ function formatTime(seconds) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-// What you swallowed to reach a checkpoint: "the Triangulum core", or a rival's name.
-const swallowed = (checkpoint) => (checkpoint.kind === 'core' ? `the ${checkpoint.name} core` : checkpoint.name);
+// A black hole's name in a sentence: "the Triangulum core", but "Sagittarius A*" or "Sköll". Works on a
+// checkpoint too, which keeps the name and article of what you swallowed.
+const called = ({ name, article }) => (article ? `the ${name}` : name);
 
 // The DOM layer over the canvas, kept quiet during play: your mass and feeding rate, a danger vignette, arrows
-// at the screen edge toward nearby black holes that are off screen, and a brief note when a checkpoint is saved.
-// Everything else waits for the end-of-game card. `totals` is { cores, rivals } for its "x / y" counters.
+// at the screen edge toward nearby black holes that are off screen, a brief note when a checkpoint is saved, and
+// the name of where you are when you first get there. Everything else waits for the end-of-game card.
 //
 // It also adds the Game tab to `settings` (the menu): retry from the last checkpoint, or start over.
 // `onRetry` and `onStartOver` do those, from the menu or the end card.
-export function createHud({ totals, settings, onRetry, onStartOver }) {
+export function createHud({ settings, onRetry, onStartOver }) {
   const root = document.createElement('div');
   root.className = 'bh';
   root.innerHTML = `
     <div class="bh-vignette"></div>
     <div class="bh-markers"></div>
+    <div class="bh-place"></div>
     <div class="bh-readout">
       <div class="bh-mass"></div>
       <div class="bh-meter"><span></span></div>
@@ -55,6 +73,20 @@ export function createHud({ totals, settings, onRetry, onStartOver }) {
   const meter = $('.bh-meter span');
   const saved = $('.bh-saved');
   saved.addEventListener('animationend', () => saved.classList.remove('show'));
+
+  // Place names wait their turn, so a new scale and the structure you're entering don't talk over each other.
+  const place = $('.bh-place');
+  const places = [];
+  function nextPlace() {
+    place.classList.remove('show', 'scale');
+    const next = places.shift();
+    if (!next) return;
+    place.textContent = next.text;
+    place.classList.toggle('scale', next.scale);
+    void place.offsetWidth; // restart the animation
+    place.classList.add('show');
+  }
+  place.addEventListener('animationend', nextPlace);
 
   // --- The Game tab -----------------------------------------------------------------
   //
@@ -139,8 +171,9 @@ export function createHud({ totals, settings, onRetry, onStartOver }) {
   const summary = (stats) => [
     ['Peak mass', formatMass(stats.peakMass)],
     ['Stars absorbed', stats.stars.toLocaleString()],
-    ['Cores swallowed', `${stats.cores} / ${totals.cores}`],
-    ['Rivals swallowed', `${stats.rivals} / ${totals.rivals}`],
+    ['Cores swallowed', stats.cores.toLocaleString()],
+    ['Rivals swallowed', stats.rivals.toLocaleString()],
+    ['Largest structures', stats.reached],
     ['Time', formatTime(stats.time)],
   ];
 
@@ -164,9 +197,9 @@ export function createHud({ totals, settings, onRetry, onStartOver }) {
     showGameOver(eater, stats, checkpoint) {
       let body =
         eater.kind === 'core'
-          ? `You crossed the event horizon of the ${eater.name} core. It now weighs ${formatMass(eater.mass)}.`
+          ? `You crossed the event horizon of ${called(eater)}. It now weighs ${formatMass(eater.mass)}.`
           : `${eater.name} swallowed you. It now weighs ${formatMass(eater.mass)}.`;
-      if (checkpoint) body += ` Retry from just after you swallowed ${swallowed(checkpoint)}.`;
+      if (checkpoint) body += ` Retry from just after you swallowed ${called(checkpoint)}.`;
       const actions = checkpoint
         ? [
             ['Retry (R)', onRetry],
@@ -177,7 +210,8 @@ export function createHud({ totals, settings, onRetry, onStartOver }) {
     },
 
     showVictory(stats) {
-      showOverlay('The universe is yours', 'Every core and every rival is gone. You are the last black hole.', summary(stats), [
+      const body = 'You outweigh every star, galaxy, cluster and wall in the observable universe.';
+      showOverlay('The universe is yours', body, summary(stats), [
         ['Keep drifting', () => hud.hideOverlay()],
         ['Play again', onStartOver],
       ]);
@@ -187,7 +221,7 @@ export function createHud({ totals, settings, onRetry, onStartOver }) {
     // the stats then), or null for the start.
     setCheckpoint(checkpoint) {
       retry.note.textContent = checkpoint
-        ? `To just after you swallowed ${swallowed(checkpoint)}, at ${formatTime(checkpoint.stats.time)}.`
+        ? `To just after you swallowed ${called(checkpoint)}, at ${formatTime(checkpoint.stats.time)}.`
         : 'From the start. Swallow a core or a rival to save a checkpoint.';
       startOver.note.textContent = checkpoint ? 'Back to the beginning. Your checkpoint is lost.' : 'Back to the beginning.';
     },
@@ -195,10 +229,22 @@ export function createHud({ totals, settings, onRetry, onStartOver }) {
     // A checkpoint has just been saved: say so, briefly.
     noteCheckpoint(checkpoint) {
       hud.setCheckpoint(checkpoint);
-      saved.textContent = `Checkpoint · ${checkpoint.kind === 'core' ? `${checkpoint.name} core` : checkpoint.name}`;
+      saved.textContent = `Checkpoint · ${checkpoint.name}`;
       saved.classList.remove('show');
       void saved.offsetWidth; // restart the animation if the last note is still showing
       saved.classList.add('show');
+    },
+
+    // You've reached somewhere new: a galaxy or structure by name, or (`scale`) a new scale of things.
+    notePlace(text, scale = false) {
+      places.push({ text, scale });
+      if (!place.classList.contains('show')) nextPlace();
+    },
+
+    // Starting again: forget any names still waiting.
+    clearPlaces() {
+      places.length = 0;
+      nextPlace();
     },
 
     hideOverlay() {

@@ -5,12 +5,15 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import {
+  BANDS,
   BOOST,
   BOOST_COST,
   CAMERA_DISTANCE,
   CAMERA_ELEVATION,
   CAPTURES_PER_FRAME,
   CHECKPOINT,
+  CORE_NAMES,
+  COSMOS,
   DISK_CAPACITY,
   DRAG,
   EINSTEIN,
@@ -24,6 +27,7 @@ import {
   HUNT_REST,
   HUNT_TIME,
   KEYS,
+  MAX_HOLES,
   MAX_LENSES,
   MAX_WARPS,
   PULL,
@@ -35,10 +39,15 @@ import {
   SIDE_CHANGE,
   STAR_SIZE,
   START_MASS,
+  STREAM,
   THRUST,
+  TIER_GROWTH,
   TINTS,
+  UNIVERSE_MASS,
   UNIVERSE_SEED,
   arrivalMass,
+  massTier,
+  radiusOf,
   shadowOf,
 } from './config.js';
 import {
@@ -53,6 +62,8 @@ import {
 } from './shaders.js';
 import { planUniverse } from './universe.js';
 import { buildFields } from './fields.js';
+import { bandOf, cellAt } from './cosmos.js';
+import { createStreamer } from './stream.js';
 import { queryGrid } from './grid.js';
 import { createHole, dangerRadius, planarDistance, spiralIn, warpToward } from './holes.js';
 import { createDisk } from './disk.js';
@@ -62,11 +73,14 @@ import { createHints } from './hints.js';
 import { createPointer } from './pointer.js';
 import { createAudio } from './audio.js';
 import { createSettings } from './settings.js';
-import { createStarfield, disposeObject, mulberry32 } from './utils.js';
+import { TAU, createStarfield, disposeObject, mulberry32 } from './utils.js';
 
 const { clamp, damp, smoothstep } = THREE.MathUtils;
 
 const HANDLED_KEYS = new Set(Object.values(KEYS).flat());
+
+// What the end card says you reached while you're still among the opening's galaxies.
+const OPENING_TITLE = 'Galaxies';
 
 // Builds the whole game into a new scene and takes over the camera and controls it's given.
 // Call update() then render() every frame, and dispose() to tear it all down.
@@ -97,13 +111,27 @@ export function createGame({ renderer, camera, controls }) {
       depthWrite: false,
     });
 
-  const starMaterial = particleMaterial(fieldVertexShader, {
+  // Every star field shares one shader and these uniforms, but has a material of its own, so each can fade out
+  // as you outgrow it.
+  const fieldUniforms = {
+    uSize: { value: STAR_SIZE * pixelRatio },
     uTime: { value: 0 },
     uWarps: { value: Array.from({ length: MAX_WARPS }, () => new THREE.Vector4()) },
     uWarpCount: { value: 0 },
-  });
+  };
+  const fieldMaterial = () =>
+    new THREE.ShaderMaterial({
+      vertexShader: fieldVertexShader,
+      fragmentShader: starFragmentShader,
+      uniforms: { ...fieldUniforms, uFade: { value: 1 } },
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
 
-  const fields = buildFields(plan, random, starMaterial);
+  // The opening's fields are here for good. Past it, the streamer adds fields to `fields` and takes them out again.
+  const openingFields = buildFields(plan, random, fieldMaterial);
+  const fields = [...openingFields];
   for (const field of fields) scene.add(field.points);
 
   const disk = createDisk(particleMaterial(diskVertexShader));
@@ -117,13 +145,9 @@ export function createGame({ renderer, camera, controls }) {
   // You, the rivals and the galaxy cores all follow the same rules: everything pulls on whatever roams,
   // anything that crosses a heavier black hole's shadow is swallowed, and a roaming black hole captures
   // lighter ones within its reach. Cores stay put, and only you can take one.
-
-  const player = createHole('player', 'You', START_MASS);
-  const rivals = plan.rivals.map((rival) => createHole('rival', rival.name, rival.mass));
-  const cores = plan.galaxies.map((galaxy) => createHole('core', galaxy.name, galaxy.coreMass));
-  const roamers = [player, ...rivals]; // you first, so you win ties over stars
-  const holes = [...roamers, ...cores];
-  holes.forEach((hole, index) => (hole.index = index));
+  //
+  // Each black hole has a slot, by which its accretion disk's particles know it. Slots are freed as rivals are
+  // swallowed or let go and as cells of the universe are dropped, and new black holes take them.
 
   // Every black hole shows which side of you it's on. Its photon ring is tinted, and near you it gets a ring:
   // solid red at how close you can get to it if it outweighs you, dashed blue around it if you outweigh it.
@@ -145,20 +169,117 @@ export function createGame({ renderer, camera, controls }) {
     });
   const DANGER_COLOR = new THREE.Color(RINGS.heavier);
   const PREY_COLOR = new THREE.Color(RINGS.lighter);
-  for (const hole of holes) {
-    if (hole === player) continue;
-    hole.ring = new THREE.Mesh(ringGeometry, ringMaterial(DANGER_COLOR));
-    scene.add(hole.ring);
-  }
   const reachRing = new THREE.Mesh(ringGeometry, ringMaterial('#cfe0ff'));
   reachRing.visible = false;
   scene.add(reachRing);
 
-  const stats = { time: 0, stars: 0, cores: 0, rivals: 0, peakMass: START_MASS };
+  const slots = new Array(MAX_HOLES).fill(null);
+  const holes = []; // every black hole with a slot: you first, so you win ties over stars
+  const roamers = []; // you, then the rivals
+  const rings = []; // by slot, made as they're first needed
+
+  // Gives a black hole the first free slot, and that slot's ring. False if there's none free (MAX_HOLES).
+  function addHole(hole) {
+    const slot = slots.indexOf(null);
+    if (slot < 0) return false;
+    hole.index = slot;
+    slots[slot] = hole;
+    holes.push(hole);
+    if (hole.kind !== 'core') roamers.push(hole);
+    if (hole !== player) {
+      if (!rings[slot]) {
+        rings[slot] = new THREE.Mesh(ringGeometry, ringMaterial(DANGER_COLOR));
+        rings[slot].visible = false;
+        scene.add(rings[slot]);
+      }
+      hole.ring = rings[slot];
+    }
+    return true;
+  }
+
+  // Frees a black hole's slot, and drops its disk. Anything still holding on to it sees it gone.
+  function removeHole(hole) {
+    disk.release(hole.index);
+    slots[hole.index] = null;
+    holes.splice(holes.indexOf(hole), 1);
+    if (hole.kind !== 'core') roamers.splice(roamers.indexOf(hole), 1);
+    if (hole.ring) hole.ring.visible = false;
+    hole.state = 'gone';
+    hole.size = 0;
+  }
+
+  const player = createHole('player', 'You', START_MASS, { key: 'player' });
+  addHole(player);
+
+  // The opening's galaxies, which rivals can feed on. Their cores stay for good. Past the opening, the streamer's
+  // records of the cells around you play the same part, with the same { key, name, x, z, radius, field, core }.
+  const opening = plan.galaxies.map((galaxy, i) => {
+    const proper = CORE_NAMES[galaxy.name];
+    const core = createHole('core', proper ?? `${galaxy.name} core`, galaxy.coreMass, { key: `core:opening:${i}`, article: !proper });
+    addHole(core);
+    return { key: `opening:${i}`, name: galaxy.name, x: galaxy.x, z: galaxy.z, radius: galaxy.radius, field: openingFields[i], core };
+  });
+  const openingByKey = new Map(opening.map((galaxy) => [galaxy.key, galaxy]));
+
+  // A rival `name` weighing `mass` at (x, z), feeding on `galaxy`. Null if there's no slot for it.
+  function spawnRival(name, mass, x, z, galaxy, key) {
+    const rival = createHole('rival', name, mass, { key });
+    if (!addHole(rival)) return null;
+    rival.position.set(x, 0, z);
+    rival.ai = { mode: 'feed', galaxy, timer: -20 * Math.random(), rest: 0 }; // staggered, so they don't all move on at once
+    rival.edible = rival.mass < player.mass;
+    rival.tint.copy(tintOf(rival));
+    return rival;
+  }
+
+  // The endless universe past the opening. Each cell near you brings its core, unless you've swallowed it, and the
+  // first time it's built, its rival, if there's room for one more.
+  const streamer = createStreamer({
+    scene,
+    fields,
+    material: fieldMaterial,
+    onBuild(record, delta) {
+      const { cell } = record;
+      if (!delta.core?.gone) {
+        const core = createHole('core', cell.coreName, cell.coreMass, { key: `core:${cell.key}`, article: cell.article });
+        if (delta.core) {
+          const { mass } = delta.core;
+          Object.assign(core, { mass, shadow: shadowOf(mass), size: shadowOf(mass) });
+        }
+        if (addHole(core)) {
+          core.position.set(cell.x, 0, cell.z);
+          core.edible = core.mass < player.mass;
+          core.tint.copy(tintOf(core));
+          record.core = core;
+        }
+      }
+      if (cell.rival && !delta.rival && roamers.length < MAX_WARPS) {
+        const angle = Math.random() * TAU;
+        const x = cell.x + Math.cos(angle) * cell.radius * 0.65;
+        const z = cell.z + Math.sin(angle) * cell.radius * 0.65;
+        const mass = cell.rival.share * arrivalMass(cell.radius);
+        if (spawnRival(cell.rival.name, mass, x, z, record, `rival:${cell.key}`)) delta.rival = true;
+      }
+    },
+    onFold(record, delta) {
+      if (record.core) delta.core = { gone: record.core.state === 'gone', mass: record.core.mass };
+    },
+    onDrop(record) {
+      if (record.core && slots[record.core.index] === record.core) removeHole(record.core);
+      record.core = null;
+    },
+  });
+
+  // A galaxy record by key: the opening's, or a cell's while the streamer has it.
+  const galaxyByKey = (key) => openingByKey.get(key) ?? streamer.records.get(key) ?? null;
+
+  const stats = { time: 0, stars: 0, cores: 0, rivals: 0, peakMass: START_MASS, band: -1, reached: OPENING_TITLE };
   let won = false;
   // Each core or rival you swallow saves a checkpoint, once it's safe, and retry() goes back to the last one.
   let checkpoint = null;
   let pending = null; // what you swallowed, while its checkpoint waits for a safe moment
+  const retired = []; // rivals swallowed this frame, whose slots are freed once nothing can need them
+  const visited = new Set(); // the galaxies and structures whose names you've been shown this run
   // Hints can slow the game right down. Everything but the hints and the sound runs on the scaled time.
   let timeScale = 1;
   let timeLost = 0; // real seconds the slow motion has cost, so the stars twinkle on game time too
@@ -215,7 +336,7 @@ export function createGame({ renderer, camera, controls }) {
   // The settings menu, where the HUD (the Game tab), the audio and then the touch controls add their tabs.
   const settings = createSettings();
 
-  const hud = createHud({ totals: { cores: cores.length, rivals: rivals.length }, settings, onRetry: retry, onStartOver: startOver });
+  const hud = createHud({ settings, onRetry: retry, onStartOver: startOver });
 
   const audio = createAudio({ camera, settings });
 
@@ -249,12 +370,16 @@ export function createGame({ renderer, camera, controls }) {
 
   // Everything as it was at the start. A checkpoint, if there is one, is kept.
   function reset() {
-    for (const field of fields) {
+    streamer.clear();
+    for (const rival of roamers.slice(1)) removeHole(rival);
+
+    for (const field of openingFields) {
       field.alive.fill(1);
       field.remaining = field.count;
       reload(field);
     }
 
+    // You and the opening's cores; the rivals are made afresh below.
     for (const hole of holes) {
       Object.assign(hole, {
         mass: hole.startMass,
@@ -275,45 +400,66 @@ export function createGame({ renderer, camera, controls }) {
       hole.tint.copy(tintOf(hole));
     }
     player.position.set(plan.start.x, 0, plan.start.z);
-    cores.forEach((core, i) => core.position.set(plan.galaxies[i].x, 0, plan.galaxies[i].z));
-    rivals.forEach((rival, i) => {
-      const { x, z, home } = plan.rivals[i];
-      rival.position.set(x, 0, z);
-      rival.ai = { mode: 'feed', galaxy: home, timer: -20 * Math.random(), rest: 0 }; // staggered, so they don't all move on at once
-    });
+    for (const galaxy of opening) galaxy.core.position.set(galaxy.x, 0, galaxy.z);
+    for (const { name, mass, x, z, home } of plan.rivals) spawnRival(name, mass, x, z, opening[home]);
 
     disk.clear();
-    Object.assign(stats, { time: 0, stars: 0, cores: 0, rivals: 0, peakMass: START_MASS });
+    Object.assign(stats, { time: 0, stars: 0, cores: 0, rivals: 0, peakMass: START_MASS, band: -1, reached: OPENING_TITLE });
     won = false;
+    visited.clear();
+    hud.clearPlaces();
 
     // Start looking along the galaxy's spiral, so "forward" sweeps through stars rather than into the core.
-    const home = plan.galaxies[0];
-    const behind = new THREE.Vector3(plan.start.z - home.z, 0, home.x - plan.start.x).normalize();
+    const home = (import.meta.env.DEV && startAtTier()) || plan.galaxies[0];
+    const behind = new THREE.Vector3(player.position.z - home.z, 0, home.x - player.position.x).normalize();
     const distance = CAMERA_DISTANCE * REACH * player.shadow;
     offset
       .copy(behind)
       .multiplyScalar(Math.cos(CAMERA_ELEVATION) * distance)
       .setY(Math.sin(CAMERA_ELEVATION) * distance);
+    streamer.sync(player.position, viewTier());
     resume(offset, REACH * player.shadow);
   }
 
-  // What a hole's checkpoint keeps besides where it is and where it's heading. Its eater is kept by index.
+  // For development: `?tier=N` in the address starts you weighing what tier N expects, just inside one of ring N's
+  // cells (see cosmos.js), so the universe far from the start can be tried out. Returns that cell, or null.
+  function startAtTier() {
+    const tier = Number(new URLSearchParams(window.location.search).get('tier'));
+    if (!(tier > 0)) return null;
+    const mass = TIER_GROWTH ** (3 * tier);
+    Object.assign(player, { mass, shadow: shadowOf(mass), size: shadowOf(mass) });
+    stats.peakMass = mass;
+    const cell = cellAt(Math.max(COSMOS.firstRing, Math.ceil(tier)), 0);
+    const out = Math.hypot(cell.x, cell.z);
+    player.position.set(cell.x * (1 - (1.3 * cell.radius) / out), 0, cell.z * (1 - (1.3 * cell.radius) / out));
+    return cell;
+  }
+
+  // What a hole's checkpoint keeps besides where it is and where it's heading. Its eater is kept by key.
   const SAVED = ['mass', 'shadow', 'size', 'state', 'fallFrom', 'feedRate', 'appetite', 'edible', 'cuedAt'];
 
-  // Saves everything that changes as you play: which stars are left, every black hole, the disks and the
-  // stats. Holds on to the camera's angle and zoom too. A few megabytes, so only the last one is kept.
+  // Saves everything that changes as you play: which stars are left (the opening's flag by flag, the cells' as the
+  // streamer's deltas), every black hole, the disks and the stats. Holds on to the camera's angle and zoom too.
+  // A few megabytes, so only the last one is kept.
   function saveCheckpoint(victim) {
     pending = null;
     checkpoint = {
       name: victim.name,
+      article: victim.article,
       kind: victim.kind,
-      fields: fields.map(({ alive, remaining, angle }) => ({ alive: alive.slice(), remaining, angle })),
+      fields: openingFields.map(({ alive, remaining, angle }) => ({ alive: alive.slice(), remaining, angle })),
+      cosmos: streamer.save(),
       holes: holes.map((hole) => ({
         ...Object.fromEntries(SAVED.map((key) => [key, hole[key]])),
-        eater: hole.eater ? hole.eater.index : -1,
+        key: hole.key,
+        kind: hole.kind,
+        name: hole.name,
+        startMass: hole.startMass,
+        slot: hole.index,
+        eater: hole.eater?.key ?? null,
         position: hole.position.clone(),
         velocity: hole.velocity.clone(),
-        ai: hole.ai && { ...hole.ai },
+        ai: hole.ai && { ...hole.ai, galaxy: hole.ai.galaxy?.key ?? null },
       })),
       disk: disk.save(),
       stats: { ...stats },
@@ -327,7 +473,7 @@ export function createGame({ renderer, camera, controls }) {
   // Everything as it was at `saved`, a checkpoint.
   function restore(saved) {
     saved.fields.forEach((state, i) => {
-      const field = fields[i];
+      const field = openingFields[i];
       field.alive.set(state.alive);
       field.remaining = state.remaining;
       field.angle = state.angle;
@@ -335,18 +481,42 @@ export function createGame({ renderer, camera, controls }) {
       reload(field);
     });
 
-    saved.holes.forEach((state, i) => {
-      const hole = holes[i];
+    // The black holes as they were: the rivals made again, and the cells around you rebuilt, cores and all. Then
+    // every saved state goes back to the black hole with its key, and the disk's particles to its new slot.
+    streamer.load(saved.cosmos);
+    for (const rival of roamers.slice(1)) removeHole(rival);
+    const keyed = new Map();
+    for (const state of saved.holes) {
+      if (state.kind !== 'rival') continue;
+      addHole(createHole('rival', state.name, state.startMass, { key: state.key }));
+    }
+    // You first, so the cells are rebuilt around where you were rather than whatever has just swallowed you.
+    const you = saved.holes.find((state) => state.key === player.key);
+    Object.assign(player, { state: you.state, eater: null, shadow: you.shadow });
+    player.position.copy(you.position);
+    streamer.sync(player.position, viewTier());
+    for (const hole of holes) keyed.set(hole.key, hole);
+
+    const remap = new Int16Array(MAX_HOLES).fill(-1);
+    for (const state of saved.holes) {
+      const hole = keyed.get(state.key);
+      if (!hole) continue;
+      remap[state.slot] = hole.index;
       for (const key of SAVED) hole[key] = state[key];
-      Object.assign(hole, { eater: state.eater < 0 ? null : holes[state.eater], jetsDue: 0, boosting: false, flash: 0 });
+      Object.assign(hole, { jetsDue: 0, boosting: false, flash: 0 });
       hole.position.copy(state.position);
       hole.velocity.copy(state.velocity);
       hole.thrust.set(0, 0, 0);
-      if (state.ai) hole.ai = { ...state.ai };
+    }
+    for (const state of saved.holes) {
+      const hole = keyed.get(state.key);
+      if (!hole) continue;
+      hole.eater = state.eater ? (keyed.get(state.eater) ?? null) : null;
+      if (state.ai) hole.ai = { ...state.ai, galaxy: galaxyByKey(state.ai.galaxy) };
       hole.tint.copy(tintOf(hole));
-    });
+    }
 
-    disk.load(saved.disk);
+    disk.load(saved.disk, remap);
     Object.assign(stats, saved.stats);
     won = saved.won;
     resume(saved.view, saved.cameraScale);
@@ -357,6 +527,7 @@ export function createGame({ renderer, camera, controls }) {
   // A checkpoint still waiting to be saved is dropped, since what you swallowed is back.
   function resume(view, scale) {
     pending = null;
+    retired.length = 0;
     controls.target.copy(player.position);
     camera.position.copy(player.position).add(view);
     controls.update();
@@ -388,6 +559,7 @@ export function createGame({ renderer, camera, controls }) {
     // Anything still falling into the victim, and its accretion disk, now belongs to the eater.
     for (const hole of holes) if (hole.eater === victim && hole.state === 'falling') hole.eater = eater;
     disk.transfer(victim.index, eater.index);
+    if (victim.kind === 'rival') retired.push(victim);
 
     if (eater === player) {
       if (victim.kind === 'core') stats.cores++;
@@ -400,6 +572,40 @@ export function createGame({ renderer, camera, controls }) {
     } else {
       audio.distant(eater.position, player);
     }
+  }
+
+  // Lets go of rivals you've long outgrown, once they're out of the way, and rivals left far behind, which makes
+  // room for new ones. `focus` is you (or whatever swallowed you), at `tier`.
+  function letGoOfRivals(focus, tier) {
+    for (const rival of roamers.slice(1)) {
+      if (rival.state !== 'alive' || rival.ai.mode === 'hunt') continue;
+      const distance = planarDistance(rival.position, focus.position);
+      const outgrown = massTier(rival.mass) < tier + STREAM.fade[1] && distance > RINGS.range[1] * REACH * focus.size;
+      if (outgrown || distance > STREAM.drop * radiusOf(tier)) removeHole(rival);
+    }
+  }
+
+  // Your size as a tier, from your shadow (which eases, so things fade smoothly as you grow), or whatever
+  // swallowed you's.
+  const viewTier = () => Math.log(Math.max(survivorOf(player).shadow, 1e-9) / SHADOW_SIZE) / Math.log(TIER_GROWTH);
+
+  // Names somewhere new as you reach it: a bigger scale of things, or a galaxy or structure you haven't been
+  // inside yet this run.
+  function notePlaces() {
+    const band = bandOf(massTier(player.mass));
+    if (band > stats.band) {
+      stats.band = band;
+      stats.reached = BANDS[band].title;
+      hud.notePlace(BANDS[band].title, true);
+    }
+    const enter = (galaxy) => {
+      if (visited.has(galaxy.key) || !galaxy.field || galaxy.field.fade < 1) return;
+      if (planarDistance(galaxy, player.position) > galaxy.radius) return;
+      visited.add(galaxy.key);
+      hud.notePlace(galaxy.name);
+    };
+    for (const galaxy of opening) enter(galaxy);
+    for (const galaxy of streamer.records.values()) enter(galaxy);
   }
 
   // --- Capture ------------------------------------------------------------------
@@ -441,7 +647,7 @@ export function createGame({ renderer, camera, controls }) {
       const reach = REACH * hole.size;
       for (const field of fields) {
         if (budget <= 0) break;
-        if (field.remaining === 0) continue;
+        if (field.remaining === 0 || field.fade === 0) continue;
 
         const dx = hole.position.x - field.x;
         const dz = hole.position.z - field.z;
@@ -462,7 +668,7 @@ export function createGame({ renderer, camera, controls }) {
       if (field.dirtyMax < 0) continue;
       field.aliveAttribute.addUpdateRange(field.dirtyMin, field.dirtyMax - field.dirtyMin + 1);
       field.aliveAttribute.needsUpdate = true;
-      field.points.visible = field.remaining > 0;
+      field.points.visible = field.remaining > 0 && field.fade > 0;
       field.dirtyMin = Infinity;
       field.dirtyMax = -1;
     }
@@ -551,23 +757,29 @@ export function createGame({ renderer, camera, controls }) {
 
   // --- Rivals -------------------------------------------------------------------
 
-  // The galaxy a rival should feed on next: plenty of stars left, about its size, not too far away.
+  // The galaxy a rival should feed on next: plenty of stars left, about its size, not too far away. Any galaxy
+  // record will do: the opening's, or a cell's whose stars have arrived. With none that suits, it stays where it
+  // is, if that's still there.
   function pickGalaxy(rival) {
-    let best = rival.ai.galaxy;
+    const current = rival.ai.galaxy?.dropped ? null : rival.ai.galaxy;
+    let best = current;
     let bestScore = 0;
-    plan.galaxies.forEach((galaxy, index) => {
-      const field = fields[index];
+    const consider = (galaxy) => {
+      const { field } = galaxy;
+      if (!field || field.fade === 0) return;
       const left = field.remaining / field.count;
       const fit = arrivalMass(galaxy.radius) / rival.mass;
       if (left < 0.25 || fit < 0.25 || fit > 4) return;
       const distance = Math.hypot(galaxy.x - rival.position.x, galaxy.z - rival.position.z);
-      const stay = index === rival.ai.galaxy ? 0.3 : 1; // prefer somewhere new
+      const stay = galaxy === current ? 0.3 : 1; // prefer somewhere new
       const score = ((left * galaxy.radius) / (distance + galaxy.radius)) * stay * (0.7 + Math.random() * 0.6);
       if (score > bestScore) {
         bestScore = score;
-        best = index;
+        best = galaxy;
       }
-    });
+    };
+    for (const galaxy of opening) consider(galaxy);
+    for (const galaxy of streamer.records.values()) consider(galaxy);
     return best;
   }
 
@@ -585,6 +797,9 @@ export function createGame({ renderer, camera, controls }) {
     const reach = REACH * rival.size;
     const toPlayer = planarDistance(rival.position, player.position);
     const playerAlive = player.state === 'alive';
+
+    // Its galaxy was left behind and dropped: it picks another, but keeps hunting or fleeing if it was.
+    if (ai.galaxy?.dropped) ai.galaxy = pickGalaxy(rival);
 
     if (playerAlive && player.mass > rival.mass && toPlayer < REACH * player.size * FLEE_RANGE) {
       if (ai.mode !== 'flee') setMode(rival, 'flee');
@@ -606,30 +821,32 @@ export function createGame({ renderer, camera, controls }) {
       setMode(rival, 'hunt');
     }
 
-    const galaxy = plan.galaxies[ai.galaxy];
-    const gx = rival.position.x - galaxy.x;
-    const gz = rival.position.z - galaxy.z;
-    const fromCenter = Math.hypot(gx, gz) || 1e-6;
-
+    const { galaxy } = ai;
     if (ai.mode === 'hunt') {
       aim.copy(player.position).addScaledVector(player.velocity, 0.4).sub(rival.position); // lead the target
     } else if (ai.mode === 'flee') {
       aim.subVectors(rival.position, player.position).normalize();
       const weave = 0.5 * Math.sin(ai.timer * 1.3); // so it isn't a straight line to run down
       aim.set(aim.x - aim.z * weave, 0, aim.z + aim.x * weave);
-    } else if (ai.mode === 'travel') {
-      aim.set(-gx, 0, -gz);
-      if (fromCenter < galaxy.radius * 0.8) setMode(rival, 'feed');
+    } else if (!galaxy) {
+      aim.subVectors(player.position, rival.position); // nowhere to feed: head for where things are happening
     } else {
-      // Feed: circle the galaxy, tightening the orbit, but never close to a heavier core.
-      const core = cores[ai.galaxy];
-      const coreDanger = core.state === 'alive' && core.mass > rival.mass ? dangerRadius(core, rival, RIVAL_PACE.feed) : 0;
-      const floor = Math.max(galaxy.radius * 0.12, coreDanger * 3);
-      const want = Math.max(floor, galaxy.radius * (0.75 - Math.max(ai.timer, 0) * 0.015));
-      const radial = clamp((want - fromCenter) / want, -1.5, 1.5) * 2;
-      aim.set((gz + gx * radial) / fromCenter, 0, (-gx + gz * radial) / fromCenter);
-      const field = fields[ai.galaxy];
-      if (ai.timer > FEED_TIME || field.remaining < field.count * 0.2) setMode(rival, 'travel');
+      const gx = rival.position.x - galaxy.x;
+      const gz = rival.position.z - galaxy.z;
+      const fromCenter = Math.hypot(gx, gz) || 1e-6;
+      if (ai.mode === 'travel') {
+        aim.set(-gx, 0, -gz);
+        if (fromCenter < galaxy.radius * 0.8) setMode(rival, 'feed');
+      } else {
+        // Feed: circle the galaxy, tightening the orbit, but never close to a heavier core.
+        const { core, field } = galaxy;
+        const coreDanger = core && core.state === 'alive' && core.mass > rival.mass ? dangerRadius(core, rival, RIVAL_PACE.feed) : 0;
+        const floor = Math.max(galaxy.radius * 0.12, coreDanger * 3);
+        const want = Math.max(floor, galaxy.radius * (0.75 - Math.max(ai.timer, 0) * 0.015));
+        const radial = clamp((want - fromCenter) / want, -1.5, 1.5) * 2;
+        aim.set((gz + gx * radial) / fromCenter, 0, (-gx + gz * radial) / fromCenter);
+        if (ai.timer > FEED_TIME || (field && field.remaining < field.count * 0.2)) setMode(rival, 'travel');
+      }
     }
     aim.y = 0;
     aim.normalize();
@@ -660,10 +877,12 @@ export function createGame({ renderer, camera, controls }) {
     return hole.edible ? PHOTON.lighter : PHOTON.heavier;
   }
 
-  // Writes a black hole into the lens pass's uniforms, if it's big enough on screen to matter.
   const lenses = lensPass.uniforms.uLenses.value;
   const tints = lensPass.uniforms.uTints.value;
   const tanHalfFov = () => Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+  // The black holes this frame that are big enough on screen to bend light.
+  const candidates = Array.from({ length: MAX_HOLES }, () => ({ u: 0, v: 0, radius: 0, brightness: 0, tint: null }));
+  let candidateCount = 0;
 
   // The smallest radius a ring at `position` can have and still be RINGS.minPixels across on screen.
   function leastRingRadius(position) {
@@ -671,9 +890,9 @@ export function createGame({ renderer, camera, controls }) {
     return depth > camera.near ? (2 * RINGS.minPixels * depth * tanHalfFov()) / window.innerHeight : 0;
   }
 
+  // Notes a black hole for the lens pass, if it's big enough on screen to matter.
   function addLens(position, shadow, brightness, tint) {
-    const count = lensPass.uniforms.uLensCount;
-    if (count.value >= MAX_LENSES || shadow <= 0) return;
+    if (shadow <= 0) return;
 
     projected.copy(position).applyMatrix4(camera.matrixWorldInverse);
     const depth = -projected.z;
@@ -688,8 +907,20 @@ export function createGame({ renderer, camera, controls }) {
     const margin = radius * EINSTEIN * 14; // where its deflection fades out
     if (u < -margin / camera.aspect || u > 1 + margin / camera.aspect || v < -margin || v > 1 + margin) return;
 
-    tints[count.value].copy(tint);
-    lenses[count.value++].set(u, v, radius, brightness);
+    Object.assign(candidates[candidateCount++], { u, v, radius, brightness, tint });
+  }
+
+  // Hands the noted black holes to the lens pass: the biggest on screen, if there are more than it can draw.
+  function writeLenses() {
+    let chosen = candidates;
+    if (candidateCount > MAX_LENSES) chosen = candidates.slice(0, candidateCount).sort((a, b) => b.radius - a.radius);
+    const count = Math.min(candidateCount, MAX_LENSES);
+    for (let i = 0; i < count; i++) {
+      const { u, v, radius, brightness, tint } = chosen[i];
+      tints[i].copy(tint);
+      lenses[i].set(u, v, radius, brightness);
+    }
+    lensPass.uniforms.uLensCount.value = count;
   }
 
   // Whatever has (eventually) swallowed this black hole, or the hole itself if it's still around.
@@ -722,21 +953,35 @@ export function createGame({ renderer, camera, controls }) {
       }
 
       if (player.state === 'alive') steer();
-      for (const rival of rivals) if (rival.state === 'alive') think(rival, delta);
+      for (const hole of roamers) if (hole.kind === 'rival' && hole.state === 'alive') think(hole, delta);
       for (const hole of roamers) if (hole.state === 'alive') move(hole, delta);
       for (const hole of holes) if (hole.state === 'falling') sink(hole, delta);
+      // Swallowed rivals give up their slots, unless you're gone: the camera follows whatever ate you, which
+      // might be one of them.
+      for (const rival of retired.splice(0)) if (player.state !== 'gone' && slots[rival.index] === rival) removeHole(rival);
+
+      // The universe around you (or whatever swallowed you): cells come and go, rivals left behind are let go,
+      // and every field fades as it's outgrown.
+      const anchor = survivorOf(player);
+      const tier = viewTier();
+      streamer.update(anchor.position, tier, stats.time);
+      letGoOfRivals(anchor, tier);
 
       for (const field of fields) {
         field.angle += field.spinRate * delta;
         field.points.rotation.y = field.angle;
+        field.fade = smoothstep(field.tier - tier, STREAM.fade[0], STREAM.fade[1]);
+        field.points.material.uniforms.uFade.value = field.fade;
+        field.points.visible = field.remaining > 0 && field.fade > 0;
       }
+      if (player.state === 'alive') notePlaces();
 
       warpers.length = 0;
       for (const hole of roamers) if (hole.state === 'alive' && warpers.length < MAX_WARPS) warpers.push(hole);
       captureNearby();
 
       // Feeding: rivals keep only part of what they swallow.
-      const absorbed = disk.update(delta, holes);
+      const absorbed = disk.update(delta, slots);
       for (const hole of holes) {
         const mass = absorbed.mass[hole.index];
         hole.mass += mass * (hole.kind === 'rival' ? RIVAL_APPETITE : 1);
@@ -807,7 +1052,8 @@ export function createGame({ renderer, camera, controls }) {
         reachRing.material.uniforms.uOpacity.value = 0.6 * hint.glow;
       }
 
-      if (!won && player.state === 'alive' && holes.every((hole) => hole === player || hole.state === 'gone')) {
+      // You win once you outweigh all the matter in the observable universe.
+      if (!won && player.state === 'alive' && player.mass >= UNIVERSE_MASS) {
         won = true;
         hud.showVictory(stats);
       }
@@ -817,7 +1063,7 @@ export function createGame({ renderer, camera, controls }) {
         pending &&
         playing &&
         danger < 1 / CHECKPOINT.safe ** 2 &&
-        !rivals.some((rival) => rival.state === 'alive' && rival.ai.mode === 'hunt')
+        !roamers.some((hole) => hole.kind === 'rival' && hole.state === 'alive' && hole.ai.mode === 'hunt')
       ) {
         saveCheckpoint(pending);
       }
@@ -832,16 +1078,26 @@ export function createGame({ renderer, camera, controls }) {
       camera.position.copy(focus.position).add(offset);
       controls.minDistance = cameraScale * 2.5;
       controls.maxDistance = cameraScale * 40;
+      // The clip planes and the backdrop grow with you too, so the view works the same at every size.
+      const near = 0.25 * cameraScale;
+      const far = Math.max(5000, 600 * cameraScale);
+      if (Math.abs(near / camera.near - 1) > 0.01 || Math.abs(far / camera.far - 1) > 0.01) {
+        camera.near = near;
+        camera.far = far;
+        camera.updateProjectionMatrix();
+      }
       camera.updateMatrixWorld();
+      const spread = Math.max(1, cameraScale);
+      backdrop.scale.setScalar(spread);
+      backdrop.material.size = 0.6 * spread;
       backdrop.position.copy(camera.position);
 
       // --- Uniforms ---
-      const { uniforms } = starMaterial;
-      uniforms.uTime.value = elapsed - timeLost;
-      uniforms.uWarpCount.value = warpers.length;
-      warpers.forEach((hole, i) => uniforms.uWarps.value[i].set(hole.position.x, hole.position.y, hole.position.z, REACH * hole.size));
+      fieldUniforms.uTime.value = elapsed - timeLost;
+      fieldUniforms.uWarpCount.value = warpers.length;
+      warpers.forEach((hole, i) => fieldUniforms.uWarps.value[i].set(hole.position.x, hole.position.y, hole.position.z, REACH * hole.size));
 
-      lensPass.uniforms.uLensCount.value = 0;
+      candidateCount = 0;
       lensPass.uniforms.uAspect.value = camera.aspect;
       lensPass.uniforms.uPixel.value = 1 / (window.innerHeight * renderer.getPixelRatio());
       for (const hole of holes) {
@@ -849,6 +1105,7 @@ export function createGame({ renderer, camera, controls }) {
         const brightness = hole.kind === 'core' ? 0.35 : (hole === player ? 0.5 : 0.4) + 2 * hole.appetite;
         addLens(hole.position, hole.size, brightness, hole.tint);
       }
+      writeLenses();
 
       if (player.state !== 'alive') danger = 0;
       hud.update({ camera, player, holes, danger });
@@ -865,6 +1122,7 @@ export function createGame({ renderer, camera, controls }) {
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
       window.removeEventListener('resize', onResize);
+      streamer.dispose();
       pointer.dispose();
       audio.dispose();
       hud.dispose();

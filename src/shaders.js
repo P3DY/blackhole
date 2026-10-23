@@ -23,6 +23,7 @@ export const fieldVertexShader = /* glsl */ `
   uniform float uSize;
   uniform vec4 uWarps[MAX_WARPS]; // xyz: a roaming black hole · w: its reach
   uniform int uWarpCount;
+  uniform float uFade; // this field's own: 1, dimming to 0 as you outgrow it
 
   attribute vec3 aColor;
   attribute float aScale;
@@ -69,7 +70,7 @@ export const fieldVertexShader = /* glsl */ `
 
     // Points smaller than a pixel flicker as they move, so draw them one pixel wide and dimmer instead.
     gl_PointSize = max(size, 1.0);
-    vColor = aColor * (0.6 + 0.4 * twinkle) * min(size, 1.0) * (1.0 + glow);
+    vColor = aColor * (0.6 + 0.4 * twinkle) * min(size, 1.0) * (1.0 + glow) * uFade;
   }
 `;
 

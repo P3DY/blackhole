@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { DISK_CAPACITY, INFLOW, INFLOW_MIN, ORBIT_SPEED, SETTLE } from './config.js';
+import { DISK_CAPACITY, INFLOW, INFLOW_MIN, MAX_HOLES, ORBIT_SPEED, SETTLE } from './config.js';
 
 // Captured matter around every black hole, simulated on the CPU in one pool. Each particle remembers the
-// index of the black hole it orbits. Live particles are kept packed at the front of the buffers (an absorbed
+// slot of the black hole it orbits. Live particles are kept packed at the front of the buffers (an absorbed
 // one is swapped with the last), so only that stretch is drawn and uploaded.
 export function createDisk(material) {
   const capacity = DISK_CAPACITY;
@@ -12,7 +12,7 @@ export function createDisk(material) {
   const holeData = new Float32Array(capacity * 4); // for the shader: center and shadow radius of its black hole
   const velocities = new Float32Array(capacity * 3);
   const masses = new Float32Array(capacity);
-  const owners = new Uint8Array(capacity); // so at most 256 black holes
+  const owners = new Uint8Array(capacity); // so at most 256 black hole slots
 
   const geometry = new THREE.BufferGeometry();
   const attributes = [
@@ -27,7 +27,7 @@ export function createDisk(material) {
   const points = new THREE.Points(geometry, material);
   points.frustumCulled = false; // the bounding sphere would go stale every frame
 
-  const absorbed = { mass: new Float32Array(256), count: new Int32Array(256) };
+  const absorbed = { mass: new Float32Array(MAX_HOLES), count: new Int32Array(MAX_HOLES) };
 
   const disk = {
     points,
@@ -61,8 +61,9 @@ export function createDisk(material) {
     },
 
     // Moves every particle along a spiral around its black hole (carried along as that moves) and absorbs
-    // those that reach the shadow. Returns the mass and count absorbed this frame, per black hole index.
-    update(delta, holes) {
+    // those that reach the shadow. `slots[i]` is the black hole in slot i. Returns the mass and count absorbed
+    // this frame, per slot.
+    update(delta, slots) {
       const fade = Math.exp(-SETTLE * delta);
       const flatten = Math.exp(-3 * delta);
       absorbed.mass.fill(0);
@@ -70,7 +71,7 @@ export function createDisk(material) {
       let i = 0;
 
       while (i < disk.count) {
-        const hole = holes[owners[i]];
+        const hole = slots[owners[i]];
         const center = hole.position;
         const shadow = Math.max(hole.size, 1e-4);
         const k = i * 3;
@@ -124,6 +125,11 @@ export function createDisk(material) {
       for (let i = 0; i < disk.count; i++) if (owners[i] === from) owners[i] = to;
     },
 
+    // Drops one black hole's disk, when its slot is about to be reused.
+    release(slot) {
+      for (let i = disk.count - 1; i >= 0; i--) if (owners[i] === slot) remove(i);
+    },
+
     clear() {
       disk.count = 0;
       geometry.setDrawRange(0, 0);
@@ -143,7 +149,8 @@ export function createDisk(material) {
       };
     },
 
-    load(saved) {
+    // `remap[slot]` is where the black hole saved in that slot is now, or -1 if it's gone (its matter goes too).
+    load(saved, remap) {
       disk.count = saved.count;
       positions.set(saved.positions);
       velocities.set(saved.velocities);
@@ -151,6 +158,12 @@ export function createDisk(material) {
       scales.set(saved.scales);
       masses.set(saved.masses);
       owners.set(saved.owners);
+      // Backwards, so the particle remove() swaps in has already been remapped.
+      for (let i = disk.count - 1; i >= 0; i--) {
+        const slot = remap[owners[i]];
+        if (slot < 0) remove(i);
+        else owners[i] = slot;
+      }
       geometry.setDrawRange(0, 0); // until update() has placed them around their black holes
     },
   };

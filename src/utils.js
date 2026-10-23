@@ -28,6 +28,18 @@ export function mulberry32(seed) {
   };
 }
 
+// Mixes integers into one 32-bit seed, so every part of the universe can have a random stream of its own.
+export function seedOf(...parts) {
+  let h = 0x9e3779b9;
+  for (const part of parts) {
+    h = Math.imul(h ^ (part | 0), 0x85ebca6b);
+    h ^= h >>> 13;
+    h = Math.imul(h, 0xc2b2ae35);
+    h ^= h >>> 16;
+  }
+  return h >>> 0;
+}
+
 // A sphere of distant white points to use as a backdrop.
 export function createStarfield(count = 2500, radius = 200) {
   const positions = new Float32Array(count * 3);

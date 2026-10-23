@@ -38,6 +38,25 @@ These constants keep progression balanced across tiers:
 - **How many stars you must eat before you can take the core:** `(CORE_MASS − 1) / STARS_MASS` ≈ 29%.
 - **What one full galaxy is worth:** `1 + STARS_MASS + CORE_MASS` ≈ 3.8× arrival. That should be close to **`TIER_GROWTH³`** ≈ 4.1×, the next tier's arrival mass. If you change `TIER_GROWTH`, rebalance `STARS_MASS` and `CORE_MASS` so the two stay close. Otherwise you'll arrive at the next galaxy too small (a grind) or too big (it's trivial).
 
+## The endless universe
+
+| Constant | Default | Effect |
+|----------|--------:|--------|
+| `COSMOS` | firstRing 7 · span 5 · sectors 7 · shrink 0.6 · stars 24,000 · rivalChance 0.3 | How the universe past the opening is laid out (see [architecture.md](architecture.md#the-endless-universe)). Ring *n* starts `span` × `radiusOf(n)` from the centre and holds `sectors` cells, each with a structure of tier *n* down to *n* − `shrink`, made of `stars` particles. `rivalChance` of cells start with a rival. |
+| `STREAM` | build 10 · drop 14 · fade −3.5 to −2.5 | Cells are built within `build` of your galaxy radii and dropped beyond `drop`. Everything fades out between `fade` tiers below yours. |
+| `BANDS` | galaxy 7 · group 12 · cluster 14 · supercluster 17 · wall 20 · beyond 28 | The ring each scale starts at, and its heading. |
+| `UNIVERSE_MASS` | 1e17 (10²³ M☉) | Outweigh it and you win. |
+| `CORE_NAMES` | Milky Way → Sagittarius A\*, Andromeda → M31\* | Proper names for the opening's cores. |
+
+These depend on each other:
+
+- **Cells must fit in their rings.** A ring is 0.6 × `span` × `radiusOf(n)` deep, and a cell's structure is up to 2 × `radiusOf(n)` across, plus margins of 0.08 × `radiusOf(n)` on each side. So `span` must stay above about 3.6, or structures don't fit. At 5 there's 0.84 radii to spare. Fewer `sectors` give more room around, and more give more structures per ring.
+- **Ring 7 must clear the opening.** It starts at `span` × 107.4 = 537, and the opening ends at 464. A smaller `span` or a bigger opening needs `firstRing` moved out.
+- **Keep `build` and `drop` apart**, so cells at the edge don't flicker in and out. `drop` must be more than the view reaches at 40 of your reach radii (4 galaxy radii), plus the furthest you can see toward the horizon.
+- **`fade` sets what you can still eat.** Lower `fade[0]` and smaller things stay longer, which costs memory: each tier further down adds a ring of cells.
+- **Memory** grows with `sectors` × `stars` × the rings built (about 21 cells, 1.5 million particles in all, at tier 15). Check `renderer.info` and the JS heap (about 100 MB at tier 15) if you raise them.
+- **Changing what `cellAt()` draws from a cell's stream** reshuffles every cell. Change the geometry instead, in `fields.js`, and only the particles move: they come from a separate stream.
+
 ## Rivals
 
 | Constant | Default | Effect |
@@ -129,23 +148,25 @@ Check these before adding content:
 
 | Limit | Default | What happens when exceeded |
 |-------|--------:|----------------------------|
-| `MAX_WARPS` | 8 | The number of roaming holes that warp **and capture** stars. Only the first 8 live roamers (you plus 7 rivals) do either. There are 7 rivals now, so it's full. **If you add a rival, raise this.** It's a shader loop bound, so the cost is small. |
-| `MAX_LENSES` | 32 | The number of black holes the lens pass can draw at once. There are currently 24 (you, 7 rivals, 16 cores). **If you add galaxies or rivals beyond 32 total holes, raise this.** |
+| `MAX_WARPS` | 8 | The number of roaming holes that warp **and capture** stars. Only the first 8 live roamers (you plus 7 rivals) do either, so new rivals past the opening only appear while fewer than 7 are about. It's a shader loop bound, so raising it costs little. |
+| `MAX_LENSES` | 32 | The number of black holes the lens pass can draw at once. Past the opening there can be more than 32 about, so the 32 biggest on screen are drawn. |
 | `DISK_CAPACITY` | 32,768 | Captured stars in flight across all disks. When the pool is full, capture pauses until particles are absorbed. |
 | `CAPTURES_PER_FRAME` | 1,500 | Spreads big captures over several frames. Raising it gives faster feeding on fast machines, but frame spikes on slow ones. |
 | `JET_CAPACITY` | 4,096 | Jet particles. When full, the oldest are overwritten. |
-| Hole count | 256 | Hard limit. `disk.js` stores owners in a `Uint8Array` and sizes the absorbed arrays to 256. |
+| `MAX_HOLES` | 128 | Black holes with a slot at once: you, the rivals, the opening's 16 cores and the cores of the cells built (about 30 at most). If it's full, a new core or rival isn't made. It can't go past 256: `disk.js` stores owners in a `Uint8Array`. |
 
 ## Content
 
-- **Universe layout:** change `UNIVERSE_SEED` for a different arrangement. Any change to the planning code or the content lists also reshuffles everything generated after it, because the layout and the geometry share one random stream.
+- **Universe layout:** change `UNIVERSE_SEED` for a different arrangement. In the opening, any change to the planning code or the content lists also reshuffles everything generated after it, because the layout and the geometry share one random stream. Past the opening, each cell has streams of its own (see [The endless universe](#the-endless-universe)).
+- **Names past the opening** are lists in `names.js`, one per scale, plus the quasars rivals are named for. A list shorter than its band's cells (`sectors` × rings) leaves the rest to designations. Cluster entries can name their core's black hole (`core: 'M87*'`).
 - **Galaxies:** add a name to `MAIN_PATH` to get the next whole tier, or add `[name, tier, nearIndex]` to `SIDE_TRIPS`. Here `nearIndex` is the main-path galaxy to place it beside. Colors are picked from `PALETTES`.
 - **Star counts** are set in `universe.js` and `fields.js`:
   - galaxies: `12000 · (radius / 4)^0.65`, capped at 60,000 (`MAX_GALAXY_STARS` in `universe.js`). The cap only affects the four galaxies past Andromeda.
   - nebulae: 2,400 each
   - loose stars: 0.2 per square unit over the box around the galaxies, outside 1.15 radii of every galaxy. Beside a galaxy of radius R wider than 42 (about Andromeda's), only `(42 / R)²` of them are kept. You see those parts of the universe from further away, so this keeps a view there from holding more loose stars than one beside Andromeda. That comes to about 21,500.
+  - each cell past the opening: `COSMOS.stars` (24,000) in its structure, drawn `√(60,000 / 24,000)` bigger to match the opening's giants, 2,400 in a nebula, and loose stars at the same density as beside the opening's biggest galaxies, about 5,000.
   These counts drive both GPU load and how many captures there are to make. Each galaxy's stars are worth `STARS_MASS` × its arrival mass however many there are, so the counts don't change the balance.
-- **Universe size:** the main path gets wider by `TIER_GROWTH` per step and the spacing grows with it, so each tier you add makes the universe about 1.7× wider. The far plane in `main.js` (5000) has to cover the whole universe at the furthest zoom (40 reach radii at your final mass). The camera keeps that zoom, so check it if you add tiers.
+- **Universe size:** the opening's main path gets wider by `TIER_GROWTH` per step and the spacing grows with it, so each tier you add makes it about 1.7× wider. If it grows past 537, move `COSMOS.firstRing` out. The camera's clip planes scale with your reach (near 0.25×, far 600×, at least `main.js`'s 5000), so they cover what's around you at any size.
 - **Controls:** `KEYS` maps actions to `KeyboardEvent.code` values. If you change the keys, update the keycaps drawn by the control lessons in `hints.js`. Every listed code has its default browser action suppressed.
   - `POINTER` sets the mouse dead zone and the distance for full thrust, as shares of the screen height (defaults 0.03 and 0.2). The `follow` touch mode uses it too.
   - `TOUCH_MODE` is the touch mode you get until you pick another in the settings menu: `'joystick'` (the default), `'follow'` or `'tilt'`.

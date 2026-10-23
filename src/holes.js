@@ -3,12 +3,15 @@ import { PULL, REACH, THRUST, WARP, shadowOf } from './config.js';
 
 const { smoothstep } = THREE.MathUtils;
 
-// You, the rivals and the galaxy cores are all the same kind of object.
-export function createHole(kind, name, mass) {
+// You, the rivals and the galaxy cores are all the same kind of object. `key` names it for good, across
+// checkpoints, and `article` says its name reads "the …" in a sentence ("the Triangulum core", but "Sköll").
+export function createHole(kind, name, mass, { key = `${kind}:${name}`, article = false } = {}) {
   return {
     kind, // 'player', 'rival' or 'core'
     name,
-    index: -1, // position in the holes array; accretion-disk particles refer to their black hole by it
+    key,
+    article,
+    index: -1, // its slot (see addHole() in game.js); accretion-disk particles refer to their black hole by it
     startMass: mass,
     mass,
     shadow: shadowOf(mass), // eases toward shadowOf(mass), so growth spurts aren't jumps

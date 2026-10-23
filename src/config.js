@@ -20,6 +20,10 @@ export const STARS_MASS = 1.4; // × arrival mass, shared between all of a galax
 
 export const shadowOf = (mass) => SHADOW_SIZE * Math.cbrt(mass);
 export const arrivalMass = (galaxyRadius) => (galaxyRadius / 4) ** 3;
+// Tiers as numbers: a tier-t galaxy has radius 4 · TIER_GROWTH^t, and expects you to arrive weighing TIER_GROWTH^3t.
+export const radiusOf = (tier) => 4 * TIER_GROWTH ** tier;
+export const tierOf = (radius) => Math.log(radius / 4) / Math.log(TIER_GROWTH);
+export const massTier = (mass) => Math.log(Math.max(mass, 1e-9)) / (3 * Math.log(TIER_GROWTH));
 
 // --- Movement and gravity (in shadow radii, so they scale with the black hole) ----
 
@@ -154,7 +158,42 @@ export const SIDE_TRIPS = [
   ['Malin 1', 6.4, 7],
 ];
 
+// Black holes that have names of their own, by the galaxy they sit in. Every other core is "the <galaxy> core".
+export const CORE_NAMES = { 'Milky Way': 'Sagittarius A*', Andromeda: 'M31*' };
+
 export const UNIVERSE_SEED = 1987; // the same universe on every visit
+
+// --- Past the opening: the endless universe ---------------------------------------
+//
+// Beyond the hand-made galaxies above, the plane is tiled by rings of cells (cosmos.js). Ring n starts
+// `span` × radiusOf(n) from the centre and is TIER_GROWTH times wider at its outer edge, so every ring holds the same
+// `sectors` cells however big it is. Each cell holds one structure of tier n, or up to `shrink` tiers smaller,
+// with `stars` particles; `rivalChance` of them start with a rival. Ring 7 starts at 537, just past the opening's
+// edge (464), and IC 1101's ring-mates make the bridge out.
+export const COSMOS = { firstRing: 7, span: 5, sectors: 7, shrink: 0.6, stars: 24000, rivalChance: 0.3 };
+
+// Cells are built within `build` of your galaxy radii (radiusOf your tier) and dropped beyond `drop`. Everything,
+// the opening included, fades out between `fade` tiers below yours, and fully faded cells are dropped too.
+export const STREAM = { build: 10, drop: 14, fade: [-3.5, -2.5] };
+
+// What you find at each scale: from tier `from` on, cells hold `kind`, under the heading `title`. Your mass lines up
+// with the real thing: tier 10 is about the Milky Way's 1.3×10¹² M☉ (dark matter included), tier 15 a rich cluster
+// like Virgo or Coma (1.5×10¹⁵), and tier 18 Laniakea (10¹⁷).
+export const BANDS = [
+  { from: 7, kind: 'galaxy', title: 'Giant galaxies' },
+  { from: 12, kind: 'group', title: 'Galaxy groups' },
+  { from: 14, kind: 'cluster', title: 'Galaxy clusters' },
+  { from: 17, kind: 'supercluster', title: 'Superclusters' },
+  { from: 20, kind: 'wall', title: 'Great walls' },
+  { from: 28, kind: 'wall', title: 'Beyond the observable universe' },
+];
+
+// You win when you outweigh all the matter in the observable universe, about 10²³ M☉ (tier 27.8).
+export const UNIVERSE_MASS = 1e17;
+
+// Black holes alive at once: you, the rivals and every core nearby. Disk particles store their black hole's slot in
+// a byte, so this can't go past 256.
+export const MAX_HOLES = 128;
 
 // --- Sound ------------------------------------------------------------------------
 //

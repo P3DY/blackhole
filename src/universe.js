@@ -70,6 +70,7 @@ export function planUniverse(random) {
     );
     nebulae.push({
       ...spot,
+      tier, // it fades with the galaxy it leads to
       radius,
       count: 2400,
       mass: 0.3 * arrivalMass(to.radius),
@@ -109,7 +110,7 @@ function findSpot(random, from, distance, nextAngle, isClear) {
   }
 }
 
-// Parameters for createGalaxyGeometry(), plus where the galaxy is and what it's worth.
+// Parameters for spiralParticles() in fields.js, plus where the galaxy is and what it's worth.
 function planGalaxy(name, x, z, radius, random) {
   const [insideColor, outsideColor] = PALETTES[Math.floor(random() * PALETTES.length)];
   const arrival = arrivalMass(radius);

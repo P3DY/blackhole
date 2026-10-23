@@ -86,6 +86,45 @@
   }
 }
 
+/* Where you've just arrived, the first time: a name at the top of the screen that fades in and out. A new scale of
+   things ("Galaxy clusters") is set a little larger. */
+.bh-place {
+  position: absolute;
+  top: 22px;
+  left: 50%;
+  translate: -50% 0;
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #e9dcc6;
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+  opacity: 0;
+}
+
+.bh-place.scale {
+  font-size: 15px;
+  letter-spacing: 0.3em;
+  color: #ffe3b8;
+}
+
+.bh-place.show {
+  animation: bh-place 4.5s ease-in-out;
+}
+
+@keyframes bh-place {
+  0% {
+    opacity: 0;
+  }
+  18%,
+  70% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 /* Edge arrows toward off-screen black holes: red outweighs you, blue is prey. */
 .bh-marker {
   --tint: #ff6b6b;

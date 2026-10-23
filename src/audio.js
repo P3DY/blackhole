@@ -441,7 +441,7 @@ export function createAudio({ camera, settings }) {
 
       const speed = alive ? player.velocity.length() / ((THRUST / DRAG) * player.shadow) : 0; // 1 at top speed
       const threat = alive ? smoothstep(danger, 0.2, 1) : 0;
-      const weight = Math.log10(Math.max(player.mass, 1)); // 0 at the start, about 3 by the end
+      const weight = Math.min(Math.log10(Math.max(player.mass, 1)), 5); // 0 at the start, 5 from tier 8 on
 
       glide(wind.filter.frequency, 350 + 450 * speed);
       glide(wind.gain.gain, 0.05 + 0.1 * Math.min(speed, 1.8));
