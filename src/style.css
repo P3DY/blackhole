@@ -29,6 +29,14 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   pointer-events: none;
+  transition: opacity 0.4s;
+}
+
+/* Too narrow for the intro and the stats panel side by side: the first touch or click clears it. */
+@media (max-width: 640px) {
+  #intro.dismissed {
+    opacity: 0;
+  }
 }
 
 #intro h1 {
@@ -48,4 +56,19 @@ body {
   margin-top: 10px;
   font-size: 11px;
   color: #7a8296;
+}
+
+/* Touch-only devices get the touch controls. */
+#intro .touch {
+  display: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  #intro .desktop {
+    display: none;
+  }
+
+  #intro .touch {
+    display: block;
+  }
 }

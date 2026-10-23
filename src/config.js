@@ -118,6 +118,12 @@ export const HINTS = [
   [9, 'Rival black holes roam too. Outgrow them and they run; stay small and they hunt you.'],
 ];
 
+// Mouse: steers toward the point under the cursor, with no push within `dead` of the black hole and full
+// thrust from `full`, both as shares of the screen height.
+export const POINTER = { dead: 0.03, full: 0.2 };
+// Touch: a joystick where the finger lands, in CSS pixels. Full thrust at `radius`, boost past `boost` × radius.
+export const STICK = { radius: 56, dead: 6, boost: 1.6 };
+
 export const KEYS = {
   forward: ['KeyW', 'ArrowUp'],
   back: ['KeyS', 'ArrowDown'],

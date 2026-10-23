@@ -25,18 +25,27 @@ Then open the URL Vite prints (http://localhost:5173 by default).
 
 | Input | Action |
 |-------|--------|
-| **W A S D** / arrow keys | Drift, relative to where the camera looks |
-| **Shift** | Boost (1.8× thrust) |
-| Drag | Orbit the camera |
+| Mouse | Drift toward the cursor. The further the cursor is from you, the harder you thrust |
+| **W A S D** / arrow keys | Drift, relative to where the camera looks. Keys take over from the mouse until it moves again |
+| **Shift** / hold right mouse button | Boost (1.8× thrust) |
+| Left-drag | Orbit the camera. You hold your course while you drag |
 | Scroll | Zoom |
 | **R** | Restart |
+
+On a touch screen:
+
+| Gesture | Action |
+|---------|--------|
+| One-finger drag | Joystick, centred where your finger lands. Drag further for more thrust |
+| Drag past the ring | Boost |
+| Two fingers | Pinch to zoom, drag to orbit |
 
 ## How to play
 
 - Drift into stars to capture them. They spiral into your accretion disk and add to your mass when they cross your shadow.
 - **Red rings** mark black holes that outweigh you, at the distance where their pull beats your thrust. Cross one and you won't get back out.
 - Every galaxy has a **supermassive core**. Once you outweigh it, fly into it to take its mass.
-- Five **rivals** roam between galaxies and eat the same stars. They keep only 30% of what they eat, so you can outgrow them. Rivals hunt you while you're smaller (Shift outruns them) and flee once you're bigger.
+- Five **rivals** roam between galaxies and eat the same stars. They keep only 30% of what they eat, so you can outgrow them. Rivals hunt you while you're smaller (boosting outruns them) and flee once you're bigger.
 - Labels show the five nearest black holes. `×2.3` means it is 2.3 times your mass, and **prey** means you outweigh it. When one is off screen, an arrow at the edge points to it.
 - You win when every core and every rival is gone.
 
@@ -58,6 +67,7 @@ src/
   disk.js           pooled accretion-disk particle simulation
   jets.js           ring-buffered relativistic-jet particles
   shaders.js        all GLSL: star fields, disks, jets, lensing pass
+  pointer.js        mouse and touch steering, and the touch joystick
   hud.js / hud.css  DOM overlay: stats panel, labels, toasts, end-of-game card
   style.css         page base styles and intro panel
   utils.js          seeded random, backdrop starfield, GPU disposal helper
@@ -77,7 +87,7 @@ docs/
 
 ## Browser support
 
-The game needs WebGL 2, which every current desktop browser has. It's built for keyboard and mouse, with no touch controls yet. Performance depends mostly on fill rate: with additive particles, bloom and lensing at full resolution, a low-end GPU at a high pixel ratio is the usual bottleneck. The renderer caps the pixel ratio at 2.
+The game needs WebGL 2, which every current desktop and mobile browser has. It plays with keyboard, mouse or touch. On screens narrower than 640 px, the intro panel fades out at the first touch or click so it doesn't cover the stats. Performance depends mostly on fill rate: with additive particles, bloom and lensing at full resolution, a low-end GPU at a high pixel ratio is the usual bottleneck. The renderer caps the pixel ratio at 2.
 
 ## Origin
 

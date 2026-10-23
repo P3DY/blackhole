@@ -51,6 +51,7 @@ import { createHole, dangerRadius, planarDistance, spiralIn, warpToward } from '
 import { createDisk } from './disk.js';
 import { createJets } from './jets.js';
 import { createHud, formatMass } from './hud.js';
+import { createPointer } from './pointer.js';
 import { createStarfield, disposeObject, mulberry32 } from './utils.js';
 
 const { clamp, damp, smoothstep } = THREE.MathUtils;
@@ -180,6 +181,8 @@ export function createGame({ renderer, camera, controls }) {
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('blur', onBlur);
+
+  const pointer = createPointer({ camera, controls, element: renderer.domElement });
 
   const hud = createHud({ cores: cores.length, rivals: rivals.length }, () => reset());
 
@@ -358,8 +361,13 @@ export function createGame({ renderer, camera, controls }) {
       .addScaledVector(forward, axis(KEYS.forward, KEYS.back))
       .addScaledVector(right, axis(KEYS.right, KEYS.left));
     if (player.thrust.lengthSq() > 0) {
-      player.thrust.normalize().multiplyScalar(THRUST * player.shadow * (isDown(KEYS.boost) ? BOOST : 1));
+      player.thrust.normalize();
+      pointer.yieldToKeys();
+    } else {
+      pointer.steer(player.position, forward, right, player.thrust); // 0–1, by how far the pointer pushes
     }
+    const boost = isDown(KEYS.boost) || pointer.boost;
+    player.thrust.multiplyScalar(THRUST * player.shadow * (boost ? BOOST : 1));
   }
 
   // Thrust, drag and every other black hole's gravity, in small steps so close passes stay accurate.
@@ -467,7 +475,8 @@ export function createGame({ renderer, camera, controls }) {
       toPlayer < reach * HUNT_RANGE
     ) {
       setMode(rival, 'hunt');
-      hud.toast(`<b>${rival.name}</b> is hunting you. Hold Shift to outrun it.`);
+      const escape = { touch: 'Drag past the ring', mouse: 'Hold the right mouse button' }[pointer.input] ?? 'Hold Shift';
+      hud.toast(`<b>${rival.name}</b> is hunting you. ${escape} to outrun it.`);
     }
 
     const galaxy = plan.galaxies[ai.galaxy];
@@ -671,6 +680,7 @@ export function createGame({ renderer, camera, controls }) {
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
       window.removeEventListener('resize', onResize);
+      pointer.dispose();
       hud.dispose();
       lensPass.dispose();
       bloomPass.dispose();

@@ -104,7 +104,7 @@ A rival **starts hunting** when all of these hold:
 - you weigh between 25% (`HUNT_PREY`) and 90% of its mass
 - you're within 9 of *its* reach radii (`HUNT_RANGE`).
 
-Because it only hunts prey of at least a quarter of its mass, a hunter is never more than ∛4 ≈ 1.59× your size. Speed scales with size, and your boost is 1.8×, so **holding Shift always outruns a hunter**.
+Because it only hunts prey of at least a quarter of its mass, a hunter is never more than ∛4 ≈ 1.59× your size. Speed scales with size, and your boost is 1.8×, so **boosting always outruns a hunter**.
 
 **Choosing a galaxy.** It skips galaxies with less than 25% of their stars left. It also skips galaxies whose arrival mass is more than 4× off its own mass in either direction. Each remaining galaxy gets a score:
 

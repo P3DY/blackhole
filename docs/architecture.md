@@ -13,6 +13,7 @@ main.js ──► game.js ──┬─► config.js        constants (imported b
                       ├─► disk.js          createDisk
                       ├─► jets.js          createJets
                       ├─► shaders.js       GLSL strings
+                      ├─► pointer.js       createPointer (mouse and touch steering)
                       ├─► hud.js ──► hud.css
                       └─► utils.js         mulberry32, createStarfield, disposeObject
 ```
@@ -50,7 +51,7 @@ Because steps 2 and 3 share one random stream, any change that consumes a differ
 `update(elapsed, delta)` runs these steps in order:
 
 1. **Sizes.** Each shadow eases toward `shadowOf(mass)`. A falling hole's drawn size shrinks with the square root of how far it has fallen.
-2. **Steer.** Turns the keyboard into thrust for the player, relative to the camera's flattened forward direction.
+2. **Steer.** Turns input into thrust for the player. Held keys win, and they push relative to the camera's flattened forward direction. Otherwise `pointer.steer()` supplies a push of length 0–1. With a mouse, it aims at the point on the galactic plane under the cursor, which it finds by raycasting. With touch, the joystick offset is mapped onto the same camera axes as the keys. See [Pointer input](#pointer-input-pointerjs).
 3. **Think.** Each live rival picks a mode and sets its thrust (see [gameplay.md](gameplay.md#rivals)).
 4. **Move.** Each live roamer integrates thrust, drag and the gravity of every other live hole in **4 substeps**, so close passes stay accurate. Shadow crossings and reach captures are checked inside each substep and start a `fall()`.
 5. **Sink.** Falling holes ride along with their eater, spiral in, and are `swallow()`ed at 0.6 of its shadow.
@@ -138,6 +139,19 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 - Only the end card accepts pointer events, so you can orbit the camera behind it.
 - Toasts remove themselves on `animationend`, and at most three are shown at once.
 
+## Pointer input (`pointer.js`)
+
+- `createPointer({ camera, controls, element })` listens for pointer events on the canvas and keeps its own input state, the same way the HUD keeps its DOM.
+- **Mouse.** Thrust grows from 0 at `POINTER.dead` to full at `POINTER.full`. Both are measured as on-screen distance from the black hole, as shares of the screen height, so the feel doesn't change with zoom or tilt. A cursor above the horizon falls back to the ray's flattened direction.
+  - While the left button is down, OrbitControls is orbiting the camera, so the last push is held rather than following a cursor that moves with the camera.
+  - The right button boosts. Pan is disabled, so OrbitControls doesn't use that button.
+  - Holding a movement key calls `yieldToKeys()`, which ignores the mouse until it moves again.
+- **Touch.**
+  - `controls.touches` is set to `{ ONE: null, TWO: DOLLY_ROTATE }`, so one finger belongs to the game and two fingers move the camera.
+  - A lone finger becomes a joystick (`STICK`). A second finger cancels it, and no new joystick starts until every finger has lifted.
+  - The `.bh-stick` element is moved only on pointer events, not every frame.
+- `pointer.input` says whether `'mouse'` or `'touch'` steered last. The hunt toast uses it to name the right boost control.
+
 ## Lifecycle
 
-`dispose()` removes the window listeners (keyboard, blur, resize) and the HUD elements. It also disposes the post-processing passes, the composer, and every geometry, material and texture in the scene. It leaves the renderer, camera and controls alone, because the host owns them.
+`dispose()` removes the window listeners (keyboard, blur, resize), the pointer listeners, and the HUD and joystick elements. It also disposes the post-processing passes, the composer, and every geometry, material and texture in the scene. It leaves the renderer, camera and controls alone, because the host owns them.

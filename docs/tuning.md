@@ -10,7 +10,7 @@ S stands for a black hole's shadow radius throughout.
 |----------|--------:|--------|
 | `THRUST` | 30 | Acceleration in S/s². |
 | `DRAG` | 2 | Linear drag in 1/s. **Top speed = `THRUST / DRAG`** = 15 S/s. |
-| `BOOST` | 1.8 | Thrust multiplier while Shift is held, for a boosted top speed of 27 S/s. |
+| `BOOST` | 1.8 | Thrust multiplier while boosting (Shift, the right mouse button, or dragging past the joystick ring), for a boosted top speed of 27 S/s. |
 | `PULL` | 187 | Gravity strength, applied as `PULL · S³ / d²`. |
 
 The **point of no return** against a black hole your own size is `√(PULL / THRUST)` ≈ 2.5 S. Red rings use the general form, `√(PULL · S_hole³ / (THRUST · S_you))`.
@@ -96,3 +96,5 @@ Check these before adding content:
   These counts drive both GPU load and how many captures there are to make.
 - **Onboarding:** `HINTS` is a list of `[seconds, message]` toasts shown at the start of a run.
 - **Controls:** `KEYS` maps actions to `KeyboardEvent.code` values. Every listed code has its default browser action suppressed.
+  - `POINTER` sets the mouse dead zone and the distance for full thrust, as shares of the screen height (defaults 0.03 and 0.2).
+  - `STICK` sizes the touch joystick in CSS pixels: full thrust at `radius` (56), a dead zone of `dead` (6), and boost beyond `boost` × the radius (1.6).

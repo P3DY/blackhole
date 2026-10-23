@@ -15,6 +15,11 @@ controls.enableDamping = true;
 
 const game = createGame({ renderer, camera, controls });
 
+// On small screens the intro covers the stats panel, so it gets out of the way once you start playing.
+renderer.domElement.addEventListener('pointerdown', () => document.querySelector('#intro').classList.add('dismissed'), {
+  once: true,
+});
+
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
