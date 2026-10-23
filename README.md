@@ -27,7 +27,7 @@ Then open the URL Vite prints (http://localhost:5173 by default).
 |-------|--------|
 | Mouse | Drift toward the cursor. The further the cursor is from you, the harder you thrust |
 | **W A S D** / arrow keys | Drift, relative to where the camera looks. Keys take over from the mouse until it moves again |
-| **Shift** / hold right mouse button | Boost (1.8× thrust) |
+| **Shift** / hold right mouse button | Boost (1.8× thrust, burns mass) |
 | Left-drag | Orbit the camera. You hold your course while you drag |
 | Scroll | Zoom |
 | **R** | Restart |
@@ -46,6 +46,7 @@ On a touch screen:
 - **Red rings** mark black holes that outweigh you, at the distance where their pull beats your thrust. Cross one and you won't get back out.
 - Every galaxy has a **supermassive core**. Once you outweigh it, fly into it to take its mass.
 - Five **rivals** roam between galaxies and eat the same stars. They keep only 30% of what they eat, so you can outgrow them. Rivals hunt you while you're smaller (boosting outruns them) and flee once you're bigger.
+- **Hawking radiation** slowly shrinks you (0.3% of your mass per second), and boosting burns another 1.5% per second, so keep eating.
 - Labels show the five nearest black holes. `×2.3` means it is 2.3 times your mass, and **prey** means you outweigh it. When one is off screen, an arrow at the edge points to it.
 - You win when every core and every rival is gone.
 

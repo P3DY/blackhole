@@ -11,6 +11,8 @@ S stands for a black hole's shadow radius throughout.
 | `THRUST` | 30 | Acceleration in S/s². |
 | `DRAG` | 2 | Linear drag in 1/s. **Top speed = `THRUST / DRAG`** = 15 S/s. |
 | `BOOST` | 1.8 | Thrust multiplier while boosting (Shift, the right mouse button, or dragging past the joystick ring), for a boosted top speed of 27 S/s. |
+| `HAWKING` | 0.003 | Hawking radiation: the share of your mass you lose every second, boosting or not (0.3%/s, so idling halves you in about 4 minutes). |
+| `BOOST_COST` | 0.015 | Extra mass lost per second while boosting and pushing, as a share of your mass (1.8%/s in total). |
 | `PULL` | 187 | Gravity strength, applied as `PULL · S³ / d²`. |
 
 The **point of no return** against a black hole your own size is `√(PULL / THRUST)` ≈ 2.5 S. Red rings use the general form, `√(PULL · S_hole³ / (THRUST · S_you))`.
@@ -55,7 +57,14 @@ These constants keep progression balanced across tiers:
 ∛(1 / HUNT_PREY) · RIVAL_PACE.hunt < BOOST        defaults: 1.59 · 1 < 1.8 ✓
 ```
 
-If you raise `RIVAL_PACE.hunt` or lower `HUNT_PREY`, check this inequality or some hunts become unwinnable.
+Boosting costs mass, and a smaller you is slower, so the margin shrinks the longer you boost. Over a whole hunt (`HUNT_TIME`) of boosting you keep `e^−(HAWKING + BOOST_COST) · HUNT_TIME` of your mass, and the stricter form is:
+
+```
+∛(1 / HUNT_PREY) · e^((HAWKING + BOOST_COST) · HUNT_TIME / 3) · RIVAL_PACE.hunt < BOOST
+                                                  defaults: 1.59 · 1.075 · 1 = 1.71 < 1.8 ✓
+```
+
+If you raise `RIVAL_PACE.hunt`, `HUNT_TIME`, `HAWKING` or `BOOST_COST`, or lower `HUNT_PREY`, check this inequality or some hunts become unwinnable.
 
 ## Accretion and effects
 

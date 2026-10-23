@@ -26,6 +26,10 @@ export const arrivalMass = (galaxyRadius) => (galaxyRadius / 4) ** 3;
 export const THRUST = 30; // acceleration, shadow radii / s²
 export const DRAG = 2; // 1/s, so top speed is THRUST / DRAG = 15 shadow radii per second
 export const BOOST = 1.8;
+// You lose mass all the time: Hawking radiation costs HAWKING of your mass per second, and boosting burns
+// BOOST_COST more. Both are shares of your mass, so they feel the same at every size.
+export const HAWKING = 0.003;
+export const BOOST_COST = 0.015;
 // Every black hole pulls with PULL · S³ / d², where S is its shadow radius (so the pull is proportional to
 // its mass). Against a black hole your own size, that beats your thrust inside 2.5 S: the point of no return.
 export const PULL = 187;

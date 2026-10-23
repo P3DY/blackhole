@@ -6,6 +6,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import {
   BOOST,
+  BOOST_COST,
   CAMERA_DISTANCE,
   CAMERA_ELEVATION,
   CAPTURES_PER_FRAME,
@@ -15,6 +16,7 @@ import {
   FEED_TIME,
   FLEE_RANGE,
   FULL_FEED,
+  HAWKING,
   HINTS,
   HUNT_GIVE_UP,
   HUNT_PREY,
@@ -207,6 +209,7 @@ export function createGame({ renderer, camera, controls }) {
         feedRate: 0,
         appetite: 0,
         jetsDue: 0,
+        boosting: false,
         noticedAt: -Infinity,
       });
       hole.velocity.set(0, 0, 0);
@@ -366,8 +369,9 @@ export function createGame({ renderer, camera, controls }) {
     } else {
       pointer.steer(player.position, forward, right, player.thrust); // 0–1, by how far the pointer pushes
     }
-    const boost = isDown(KEYS.boost) || pointer.boost;
-    player.thrust.multiplyScalar(THRUST * player.shadow * (boost ? BOOST : 1));
+    // Boosting only burns mass while you're actually pushing.
+    player.boosting = (isDown(KEYS.boost) || pointer.boost) && player.thrust.lengthSq() > 0;
+    player.thrust.multiplyScalar(THRUST * player.shadow * (player.boosting ? BOOST : 1));
   }
 
   // Thrust, drag and every other black hole's gravity, in small steps so close passes stay accurate.
@@ -602,6 +606,8 @@ export function createGame({ renderer, camera, controls }) {
       }
       jets.update(delta);
       if (player.state === 'alive') {
+        // Hawking radiation, plus the cost of boosting.
+        player.mass *= Math.exp(-(HAWKING + (player.boosting ? BOOST_COST : 0)) * delta);
         stats.stars += absorbed.count[player.index];
         stats.peakMass = Math.max(stats.peakMass, player.mass);
       }

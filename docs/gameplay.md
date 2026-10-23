@@ -33,6 +33,7 @@ Stars within reach are pulled out of their galaxy into your **accretion disk**. 
 
 - **You keep 100%** of what you absorb. **Rivals keep 30%** (`RIVAL_APPETITE`), which is why you can outgrow them.
 - The **feeding meter** under your mass shows your current growth rate. Full means growing 4% per second (`FULL_FEED`). The rate also drives how bright your photon ring is and how strongly you fire **relativistic jets** from both poles.
+- **You're always shrinking.** Hawking radiation costs you 0.3% of your mass per second (`HAWKING`), and boosting burns another 1.5% per second (`BOOST_COST`) while you push. Both scale with your mass, so stop eating for long and lighter rivals and cores start to outweigh you. Rivals and cores don't radiate.
 - If more than 1,500 stars are within reach in one frame, the rest are captured over the next few frames, nearest first.
 
 ## Danger rings and the vignette
@@ -104,7 +105,7 @@ A rival **starts hunting** when all of these hold:
 - you weigh between 25% (`HUNT_PREY`) and 90% of its mass
 - you're within 9 of *its* reach radii (`HUNT_RANGE`).
 
-Because it only hunts prey of at least a quarter of its mass, a hunter is never more than ∛4 ≈ 1.59× your size. Speed scales with size, and your boost is 1.8×, so **boosting always outruns a hunter**.
+Because it only hunts prey of at least a quarter of its mass, a hunter is never more than ∛4 ≈ 1.59× your size. Speed scales with size, and your boost is 1.8×, so **boosting always outruns a hunter**. That holds even though boosting costs mass: a full 12-second hunt of boosting leaves you 81% of your mass, which still keeps the hunter under 1.71× your speed (see [tuning.md](tuning.md#rivals)).
 
 **Choosing a galaxy.** It skips galaxies with less than 25% of their stars left. It also skips galaxies whose arrival mass is more than 4× off its own mass in either direction. Each remaining galaxy gets a score:
 
