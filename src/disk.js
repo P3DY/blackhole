@@ -128,6 +128,31 @@ export function createDisk(material) {
       disk.count = 0;
       geometry.setDrawRange(0, 0);
     },
+
+    // A copy of every live particle, for a checkpoint. load() puts them back; the next update() uploads them.
+    save() {
+      const n = disk.count;
+      return {
+        count: n,
+        positions: positions.slice(0, n * 3),
+        velocities: velocities.slice(0, n * 3),
+        colors: colors.slice(0, n * 3),
+        scales: scales.slice(0, n),
+        masses: masses.slice(0, n),
+        owners: owners.slice(0, n),
+      };
+    },
+
+    load(saved) {
+      disk.count = saved.count;
+      positions.set(saved.positions);
+      velocities.set(saved.velocities);
+      colors.set(saved.colors);
+      scales.set(saved.scales);
+      masses.set(saved.masses);
+      owners.set(saved.owners);
+      geometry.setDrawRange(0, 0); // until update() has placed them around their black holes
+    },
   };
 
   function remove(i) {

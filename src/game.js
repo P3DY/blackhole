@@ -10,6 +10,7 @@ import {
   CAMERA_DISTANCE,
   CAMERA_ELEVATION,
   CAPTURES_PER_FRAME,
+  CHECKPOINT,
   DISK_CAPACITY,
   DRAG,
   EINSTEIN,
@@ -155,6 +156,9 @@ export function createGame({ renderer, camera, controls }) {
 
   const stats = { time: 0, stars: 0, cores: 0, rivals: 0, peakMass: START_MASS };
   let won = false;
+  // Each core or rival you swallow saves a checkpoint, once it's safe, and retry() goes back to the last one.
+  let checkpoint = null;
+  let pending = null; // what you swallowed, while its checkpoint waits for a safe moment
   // Hints can slow the game right down. Everything but the hints and the sound runs on the scaled time.
   let timeScale = 1;
   let timeLost = 0; // real seconds the slow motion has cost, so the stars twinkle on game time too
@@ -198,7 +202,7 @@ export function createGame({ renderer, camera, controls }) {
     if (!HANDLED_KEYS.has(event.code)) return;
     event.preventDefault();
     pressed.add(event.code);
-    if (!event.repeat && KEYS.restart.includes(event.code)) reset();
+    if (!event.repeat && KEYS.retry.includes(event.code)) retry();
     if (!event.repeat && KEYS.mute.includes(event.code)) audio.toggleMute();
   }
   const onKeyUp = (event) => pressed.delete(event.code);
@@ -208,26 +212,47 @@ export function createGame({ renderer, camera, controls }) {
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('blur', onBlur);
 
-  // The settings menu, where the audio and then the touch controls add their rows.
+  // The settings menu, where the HUD (the Game tab), the audio and then the touch controls add their tabs.
   const settings = createSettings();
+
+  const hud = createHud({ totals: { cores: cores.length, rivals: rivals.length }, settings, onRetry: retry, onStartOver: startOver });
 
   const audio = createAudio({ camera, settings });
 
   const pointer = createPointer({ camera, controls, element: renderer.domElement, settings });
 
-  const hud = createHud({ cores: cores.length, rivals: rivals.length }, () => reset());
-
   const hints = createHints({ controls });
 
   // --- Game state ---------------------------------------------------------------
 
+  // Back to the last checkpoint, or the start if there isn't one yet (R, or Retry).
+  function retry() {
+    if (checkpoint) restore(checkpoint);
+    else reset();
+  }
+
+  // Back to the start, forgetting the checkpoint.
+  function startOver() {
+    checkpoint = null;
+    hud.setCheckpoint(null);
+    reset();
+  }
+
+  // After the stars' alive flags have all been rewritten: upload them whole.
+  function reload(field) {
+    field.aliveAttribute.clearUpdateRanges();
+    field.aliveAttribute.needsUpdate = true;
+    field.points.visible = field.remaining > 0;
+    field.dirtyMin = Infinity;
+    field.dirtyMax = -1;
+  }
+
+  // Everything as it was at the start. A checkpoint, if there is one, is kept.
   function reset() {
     for (const field of fields) {
       field.alive.fill(1);
       field.remaining = field.count;
-      field.aliveAttribute.clearUpdateRanges(); // upload the whole thing
-      field.aliveAttribute.needsUpdate = true;
-      field.points.visible = true;
+      reload(field);
     }
 
     for (const hole of holes) {
@@ -258,7 +283,6 @@ export function createGame({ renderer, camera, controls }) {
     });
 
     disk.clear();
-    jets.clear();
     Object.assign(stats, { time: 0, stars: 0, cores: 0, rivals: 0, peakMass: START_MASS });
     won = false;
 
@@ -266,14 +290,79 @@ export function createGame({ renderer, camera, controls }) {
     const home = plan.galaxies[0];
     const behind = new THREE.Vector3(plan.start.z - home.z, 0, home.x - plan.start.x).normalize();
     const distance = CAMERA_DISTANCE * REACH * player.shadow;
-    camera.position
-      .copy(player.position)
-      .addScaledVector(behind, Math.cos(CAMERA_ELEVATION) * distance)
-      .add(new THREE.Vector3(0, Math.sin(CAMERA_ELEVATION) * distance, 0));
-    controls.target.copy(player.position);
-    controls.update();
-    cameraScale = REACH * player.shadow;
+    offset
+      .copy(behind)
+      .multiplyScalar(Math.cos(CAMERA_ELEVATION) * distance)
+      .setY(Math.sin(CAMERA_ELEVATION) * distance);
+    resume(offset, REACH * player.shadow);
+  }
 
+  // What a hole's checkpoint keeps besides where it is and where it's heading. Its eater is kept by index.
+  const SAVED = ['mass', 'shadow', 'size', 'state', 'fallFrom', 'feedRate', 'appetite', 'edible', 'cuedAt'];
+
+  // Saves everything that changes as you play: which stars are left, every black hole, the disks and the
+  // stats. Holds on to the camera's angle and zoom too. A few megabytes, so only the last one is kept.
+  function saveCheckpoint(victim) {
+    pending = null;
+    checkpoint = {
+      name: victim.name,
+      kind: victim.kind,
+      fields: fields.map(({ alive, remaining, angle }) => ({ alive: alive.slice(), remaining, angle })),
+      holes: holes.map((hole) => ({
+        ...Object.fromEntries(SAVED.map((key) => [key, hole[key]])),
+        eater: hole.eater ? hole.eater.index : -1,
+        position: hole.position.clone(),
+        velocity: hole.velocity.clone(),
+        ai: hole.ai && { ...hole.ai },
+      })),
+      disk: disk.save(),
+      stats: { ...stats },
+      won,
+      view: new THREE.Vector3().subVectors(camera.position, controls.target),
+      cameraScale,
+    };
+    hud.noteCheckpoint(checkpoint);
+  }
+
+  // Everything as it was at `saved`, a checkpoint.
+  function restore(saved) {
+    saved.fields.forEach((state, i) => {
+      const field = fields[i];
+      field.alive.set(state.alive);
+      field.remaining = state.remaining;
+      field.angle = state.angle;
+      field.points.rotation.y = state.angle;
+      reload(field);
+    });
+
+    saved.holes.forEach((state, i) => {
+      const hole = holes[i];
+      for (const key of SAVED) hole[key] = state[key];
+      Object.assign(hole, { eater: state.eater < 0 ? null : holes[state.eater], jetsDue: 0, boosting: false, flash: 0 });
+      hole.position.copy(state.position);
+      hole.velocity.copy(state.velocity);
+      hole.thrust.set(0, 0, 0);
+      if (state.ai) hole.ai = { ...state.ai };
+      hole.tint.copy(tintOf(hole));
+    });
+
+    disk.load(saved.disk);
+    Object.assign(stats, saved.stats);
+    won = saved.won;
+    resume(saved.view, saved.cameraScale);
+  }
+
+  // What starting and retrying share: the camera goes to you, `view` (camera minus target) at `scale` (the
+  // camera's zoom, see update()), and the jets, the end card, any slowed moment and the sound start afresh.
+  // A checkpoint still waiting to be saved is dropped, since what you swallowed is back.
+  function resume(view, scale) {
+    pending = null;
+    controls.target.copy(player.position);
+    camera.position.copy(player.position).add(view);
+    controls.update();
+    cameraScale = scale;
+
+    jets.clear();
     hud.hideOverlay();
     hints.reset();
     pointer.recentre();
@@ -304,8 +393,9 @@ export function createGame({ renderer, camera, controls }) {
       if (victim.kind === 'core') stats.cores++;
       else stats.rivals++;
       audio.devour(victim.mass / eater.mass);
+      pending = victim;
     } else if (victim === player) {
-      hud.showGameOver(eater, stats);
+      hud.showGameOver(eater, stats, checkpoint);
       audio.swallowed();
     } else {
       audio.distant(eater.position, player);
@@ -720,6 +810,16 @@ export function createGame({ renderer, camera, controls }) {
       if (!won && player.state === 'alive' && holes.every((hole) => hole === player || hole.state === 'gone')) {
         won = true;
         hud.showVictory(stats);
+      }
+
+      // A checkpoint for what you last swallowed, once nothing heavier is close and nothing is hunting you.
+      if (
+        pending &&
+        playing &&
+        danger < 1 / CHECKPOINT.safe ** 2 &&
+        !rivals.some((rival) => rival.state === 'alive' && rival.ai.mode === 'hunt')
+      ) {
+        saveCheckpoint(pending);
       }
 
       // --- Camera: follow, and zoom out as you grow (keeping the user's orbit and zoom) ---

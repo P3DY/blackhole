@@ -126,13 +126,16 @@ function createNebulaGeometry({ radius, count, colors }, random) {
   return particleGeometry(positions, colorArray, scales, phases);
 }
 
-// Faint stars scattered between the galaxies, sized and weighted like the nearest one.
-function createLooseStars(galaxies, random, count = 9000) {
+// Faint stars scattered between the galaxies, sized and weighted like the nearest one: `density` of them per
+// square unit, thinned out beside galaxies wider than `crowd`. You see those from further away, so a view there
+// holds no more loose stars than one beside a galaxy `crowd` wide (about Andromeda's size).
+function createLooseStars(galaxies, random, density = 0.2, crowd = 42) {
   const margin = 20;
   const minX = Math.min(...galaxies.map((g) => g.x - g.radius)) - margin;
   const maxX = Math.max(...galaxies.map((g) => g.x + g.radius)) + margin;
   const minZ = Math.min(...galaxies.map((g) => g.z - g.radius)) - margin;
   const maxZ = Math.max(...galaxies.map((g) => g.z + g.radius)) + margin;
+  const count = Math.round((maxX - minX) * (maxZ - minZ) * density); // tries; most land clear of the galaxies
 
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
@@ -144,7 +147,7 @@ function createLooseStars(galaxies, random, count = 9000) {
   const color = new THREE.Color();
 
   let n = 0;
-  for (let attempt = 0; n < count && attempt < count * 6; attempt++) {
+  for (let attempt = 0; attempt < count; attempt++) {
     const x = lerp(minX, maxX, random());
     const z = lerp(minZ, maxZ, random());
 
@@ -157,7 +160,7 @@ function createLooseStars(galaxies, random, count = 9000) {
         nearest = galaxy;
       }
     }
-    if (closeness < 1.15) continue;
+    if (closeness < 1.15 || random() >= (crowd / nearest.radius) ** 2) continue;
 
     const scaleUp = nearest.radius / 4;
     positions[n * 3] = x;

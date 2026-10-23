@@ -28,7 +28,7 @@ const OPEN = 20000; // the horizon filter's cutoff while you're alive…
 const SLOWED = 900; // …and while a hint has slowed time right down
 
 // What feeding sounds like, under the swirl: [key, label, description]. It's the player's choice: all of them
-// are built, and the Feeding section of the settings menu picks the one you hear.
+// are built, and the Feeding section of the settings menu's Sound tab picks the one you hear.
 const FEEDS = [
   ['crackle', 'Crackle', 'Sparse bright clicks, like embers'],
   ['tuned', 'Tuned', 'Breathy noise tuned to D minor, like blowing across a bottle'],
@@ -286,13 +286,15 @@ export function createAudio({ camera, settings }) {
   for (const type of UNLOCK_EVENTS) window.addEventListener(type, unlock, { capture: true, passive: true });
   document.addEventListener('visibilitychange', onVisibility);
 
-  // Its rows in the settings menu: a switch for each of SWITCHES, then the feeding sounds.
+  // Its tab in the settings menu: a switch for each of SWITCHES, then the feeding sounds.
   function buildMenu() {
+    const page = settings.addTab('Sound');
     const inputs = {};
-    for (const { key, label } of SWITCHES) inputs[key] = settings.addSwitch(label, key === 'sound' ? 'M toggles' : '', (on) => set(key, !on));
+    for (const { key, label } of SWITCHES) inputs[key] = settings.addSwitch(page, label, key === 'sound' ? 'M toggles' : '', (on) => set(key, !on));
 
     // Which feeding sound plays. Picking one (even the current one) plays it for a moment.
-    const feeding = settings.addGroup('Feeding');
+    const feeding = settings.addGroup(page, 'Feeding');
+    feeding.classList.add('bh-columns');
     const choices = settings.addChoices(feeding, FEEDS, chooseFeed);
 
     return {

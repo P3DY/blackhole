@@ -34,7 +34,8 @@ These docs quote numbers derived from `config.js` (tier tables, rival masses, st
 - Every other module is a stateless factory or a set of pure helpers. `config.js` holds every gameplay and rendering constant.
 - Physics is 2D on the **x/z plane**. Distances and velocities ignore y, which only adds visual thickness.
 - Most quantities are in **shadow radii** (`S = SHADOW_SIZE · ∛mass`), so the game feels the same at every size.
-- `reset()` (also bound to **R**) restores state without rebuilding geometry.
+- `reset()` restores the starting state without rebuilding geometry, and `restore()` puts back a checkpoint the same way. Each core or rival you swallow saves one (`saveCheckpoint()`) once it's safe. **R** and the menu's Retry call `retry()`, which restores the last checkpoint, or resets if there isn't one. A checkpoint copies every field's alive flags, every hole, the disk pool and the stats. If you add state that changes during play, add it to the checkpoint too.
+- The settings menu is tabbed. `hud.js` adds the Game tab (Retry, Start over), `audio.js` the Sound tab and `pointer.js` the Touch tab, in that order.
 - **Game time can run slow.** `hints.js` returns a time scale (4% during a slowed moment), and `update()` multiplies the host's delta by it before simulating. Anything that's part of the game world must use that scaled `delta`. The hints and the audio take the real frame delta, and OrbitControls runs in real time.
 
 ## Invariants that span files
@@ -44,8 +45,8 @@ These docs quote numbers derived from `config.js` (tier tables, rival masses, st
 - **One seeded random stream.** `planUniverse()` (`universe.js`) and `buildFields()` (`fields.js`) share a single `mulberry32(UNIVERSE_SEED)` stream. Anything that changes how many random values the planning step consumes reshuffles all the galaxy geometry generated after it. Rival timers and jets use `Math.random()` on purpose. `audio.js` renders its music from its own `mulberry32` seed, so it never touches this stream.
 - **The `holes` array order is `[player, ...rivals, ...cores]`.** Each hole stores its index, and disk particles refer to their owner by that index. The player goes first so it wins ties.
 - **Capacity limits:**
-  - `MAX_WARPS` (8) caps how many roamers can warp *and capture* stars.
-  - `MAX_LENSES` (24) caps how many holes get drawn by the lens pass.
+  - `MAX_WARPS` (8) caps how many roamers can warp *and capture* stars. With 7 rivals it's full.
+  - `MAX_LENSES` (32) caps how many holes get drawn by the lens pass. There are 24.
   - `disk.js` stores owners in a `Uint8Array`, so there's a hard limit of 256 holes.
   - If you add rivals or galaxies, check these first (see `docs/tuning.md`).
 - **Balance rules:**

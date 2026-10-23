@@ -11,6 +11,10 @@ import {
 } from './config.js';
 import { TAU } from './utils.js';
 
+// The giant galaxies past Andromeda would otherwise each hold 65,000–100,000 stars. Their stars are drawn bigger
+// to match, so they look about as full with this many, and the GPU has less to do.
+const MAX_GALAXY_STARS = 60000;
+
 // Lays out the universe as plain data: where every galaxy, nebula and rival is, and where you start.
 // Deterministic for a given `random`, so a seeded generator gives the same universe every time.
 export function planUniverse(random) {
@@ -114,7 +118,7 @@ function planGalaxy(name, x, z, radius, random) {
     x,
     z,
     radius,
-    count: Math.round(12000 * (radius / 4) ** 0.65),
+    count: Math.min(Math.round(12000 * (radius / 4) ** 0.65), MAX_GALAXY_STARS),
     branches: 2 + Math.floor(random() * 4),
     spin: (4.5 + random() * 2) / radius, // the same amount of winding whatever the size
     randomness: 0.3 + random() * 0.2,

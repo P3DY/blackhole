@@ -30,22 +30,23 @@ Then open the URL Vite prints (http://localhost:5173 by default).
 | **Shift** / hold right mouse button | Boost (1.8× thrust, burns mass) |
 | Left-drag | Orbit the camera. You hold your course while you drag |
 | Scroll | Zoom |
-| **R** | Restart |
-| **M** / gear menu (top left) | Mute or unmute. The gear also mutes music or effects on their own. Settings are remembered |
-| Feeding section of the gear menu | Pick the sound you hear while you feed: Crackle, Tuned (default), Drone, Rain, Whoosh or Gulps. Picking one plays it for a moment. Your choice is remembered |
+| **R** | Retry from your last checkpoint (or from the start, if you haven't reached one) |
+| Gear menu (top left), Game tab | **Retry**, or **Start over** from the beginning (press it twice, since it throws your checkpoint away) |
+| **M** / gear menu, Sound tab | Mute or unmute. The Sound tab also mutes music or effects on their own. Settings are remembered |
+| Feeding, in the Sound tab | Pick the sound you hear while you feed: Crackle, Tuned (default), Drone, Rain, Whoosh or Gulps. Picking one plays it for a moment. Your choice is remembered |
 
 On a touch screen:
 
 | Gesture | Action |
 |---------|--------|
-| One finger | Steer, in the mode picked in the gear menu's Touch section (remembered) |
+| One finger | Steer, in the mode picked in the gear menu's Touch tab (remembered) |
 | Two fingers | Pinch to zoom, drag to orbit |
 
 | Touch mode | Steer | Boost |
 |------------|-------|-------|
 | Joystick (default) | Drag from where your finger lands; further means more thrust. Its **Visible** switch hides the ring | Drag past the ring |
 | Follow finger | Touch where you want to go | Double-tap and hold |
-| Tilt | Tilt the phone; tipping the top away goes forward. Restarting or picking Tilt again re-centres it | Hold a finger down |
+| Tilt | Tilt the phone; tipping the top away goes forward. Retrying, starting over or picking Tilt again re-centres it | Hold a finger down |
 
 Tilt needs a motion sensor and a page served over https (iOS asks for permission first). Where it can't work, it's greyed out.
 
@@ -56,9 +57,10 @@ There's no intro screen: the game starts straight away. Each control is shown as
 - Drift into stars to capture them. They spiral into your accretion disk and add to your mass when they cross your shadow.
 - **Red** means heavier than you, **blue** means prey. Each black hole's photon ring glows in its color, and near you, heavier ones get a solid red ring at the distance where their pull beats your thrust. Cross one and you won't get back out. Lighter ones get a dashed blue ring. When one changes sides, its ring flares and a two-note tone rises or falls.
 - Every galaxy has a **supermassive core**. Once you outweigh it, fly into it to take its mass.
-- Five **rivals** roam between galaxies and eat the same stars. They keep only 30% of what they eat, so you can outgrow them. Rivals hunt you while you're smaller (boosting outruns them) and flee once you're bigger.
+- Seven **rivals** roam between galaxies and eat the same stars. They keep only 30% of what they eat, so you can outgrow them. Rivals hunt you while you're smaller (boosting outruns them) and flee once you're bigger.
 - **Hawking radiation** slowly shrinks you (0.3% of your mass per second), and boosting burns another 1.5% per second, so keep eating.
-- The HUD stays out of the way: your mass and feeding rate in the corner, and arrows at the screen edge toward the nearest black holes when they're out of view (blue: you outweigh it, red: it outweighs you). Apart from those hints, there are no pop-up messages during play.
+- Every core or rival you swallow saves a **checkpoint**, as soon as nothing heavier is close and nothing is hunting you. If you're swallowed, **Retry** (or **R**) takes you back to it. Checkpoints last until you reload the page.
+- The HUD stays out of the way: your mass and feeding rate in the corner, and arrows at the screen edge toward the nearest black holes when they're out of view (blue: you outweigh it, red: it outweighs you). Apart from those hints and a brief note when a checkpoint is saved, there are no pop-up messages during play.
 - You win when every core and every rival is gone.
 
 [docs/gameplay.md](docs/gameplay.md) has the full rules and the rival AI.
@@ -80,9 +82,9 @@ src/
   jets.js           ring-buffered relativistic-jet particles
   shaders.js        all GLSL: star fields, disks, jets, rings, lensing pass
   pointer.js        mouse and touch steering: joystick, follow-finger and tilt modes
-  settings.js / .css the gear menu that the audio and touch settings add their rows to
+  settings.js / .css the gear menu: tabs that the HUD, the audio and the touch settings fill
   audio.js          synthesised music loop, ambience and sound effects
-  hud.js / hud.css  DOM overlay: mass readout, edge arrows, vignette, end-of-game card
+  hud.js / hud.css  DOM overlay: mass readout, edge arrows, vignette, checkpoint note, end card, Game tab
   hints.js / .css   control lessons as looping gestures, and the slowed moments that explain weight
   style.css         page base styles
   utils.js          seeded random, backdrop starfield, GPU disposal helper

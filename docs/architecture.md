@@ -1,6 +1,6 @@
 # Architecture
 
-How the code is put together: what runs each frame, how everything is drawn, and the data structures that keep about 360,000 capturable stars cheap.
+How the code is put together: what runs each frame, how everything is drawn, and the data structures that keep about 620,000 capturable stars cheap.
 
 ## Modules
 
@@ -13,7 +13,7 @@ main.js ──► game.js ──┬─► config.js        constants (imported b
                       ├─► disk.js          createDisk
                       ├─► jets.js          createJets
                       ├─► shaders.js       GLSL strings
-                      ├─► settings.js ──► settings.css   createSettings (the gear menu), localStorage helpers
+                      ├─► settings.js ──► settings.css   createSettings (the tabbed gear menu), localStorage helpers
                       ├─► pointer.js       createPointer (mouse and touch steering, in three touch modes)
                       ├─► audio.js         createAudio (synthesised music, ambience, effects)
                       ├─► hud.js ──► hud.css
@@ -21,7 +21,7 @@ main.js ──► game.js ──┬─► config.js        constants (imported b
                       └─► utils.js         mulberry32, createStarfield, disposeObject
 ```
 
-- **`main.js`** is the host. It creates the `WebGLRenderer`, the `PerspectiveCamera` (60° fov, near 0.1, far 1000) and `OrbitControls` with damping. It calls `createGame()` and runs the loop, clamping each frame's delta to 0.1 s so a backgrounded tab doesn't jump forward.
+- **`main.js`** is the host. It creates the `WebGLRenderer`, the `PerspectiveCamera` (60° fov, near 0.1, far 5000, so the whole universe fits even fully zoomed out near the end) and `OrbitControls` with damping. It calls `createGame()` and runs the loop, clamping each frame's delta to 0.1 s so a backgrounded tab doesn't jump forward.
 - **`game.js`** holds `createGame({ renderer, camera, controls })`, a closure that owns all game state. It returns `{ scene, update, render, dispose }`. The rival AI, capture, movement and camera code live in it because they share that state.
 - Every other module is a factory or a set of pure helpers with no game state of its own.
 
@@ -33,8 +33,8 @@ There are three kinds of object:
 
 | Object | Moves? | Made by | Drawn as |
 |--------|--------|---------|----------|
-| **Fields**: 12 galaxies, 5 nebulae, 1 set of loose stars | Galaxies rotate in place | `fields.js` | One `THREE.Points` each, sharing one `ShaderMaterial` |
-| **Black holes**: 1 player, 5 rivals, 12 cores | Player and rivals roam; cores are fixed | `holes.js` | Nothing directly. The lens pass draws them, with a photon ring tinted by which side of you they're on, plus a flat ring quad near you (see [Rings](#rings-ringfragmentshader)) |
+| **Fields**: 16 galaxies, 7 nebulae, 1 set of loose stars | Galaxies rotate in place | `fields.js` | One `THREE.Points` each, sharing one `ShaderMaterial` |
+| **Black holes**: 1 player, 7 rivals, 16 cores | Player and rivals roam; cores are fixed | `holes.js` | Nothing directly. The lens pass draws them, with a photon ring tinted by which side of you they're on, plus a flat ring quad near you (see [Rings](#rings-ringfragmentshader)) |
 | **Particles in flight**: accretion disks and jets | Simulated on the CPU | `disk.js`, `jets.js` | One `THREE.Points` each, for all black holes combined |
 
 The order of the `holes` array matters: `[player, ...rivals, ...cores]`. Each hole's index is stored on it, and disk particles refer to their black hole by that index. The player comes first, so it wins ties over stars.
@@ -45,7 +45,7 @@ The order of the `holes` array matters: `[player, ...rivals, ...cores]`. Each ho
 2. `planUniverse(random)` lays out the main path, side trips, nebulae, start point and rival spawns as plain objects.
 3. `buildFields(plan, random, starMaterial)` builds geometry for every field **from the same random stream**. It also builds each field's spatial grid once.
 4. Black holes, rings, the disk pool, the jet pool, the post-processing chain, the HUD and the hints are created.
-5. `reset()` puts everything at its starting state. **R** calls the same function, so a restart rebuilds nothing. It only refills the alive flags, restores the holes and clears the pools.
+5. `reset()` puts everything at its starting state. It rebuilds nothing: it only refills the alive flags, restores the holes and clears the pools. Retrying from a checkpoint works the same way (see [Checkpoints](#checkpoints)).
 
 Because steps 2 and 3 share one random stream, any change that consumes a different number of random values in `planUniverse` changes all of the galaxy geometry after it. Rival timers and jets use `Math.random()`, so runs differ slightly even though the universe is fixed.
 
@@ -61,7 +61,7 @@ Because steps 2 and 3 share one random stream, any change that consumes a differ
 6. **Rotate fields.** Each galaxy's angle advances by its spin rate.
 7. **Capture.** Builds the list of *warpers*: live roamers, at most `MAX_WARPS`. For each one, it queries every nearby field's grid and moves stars within reach into the disk.
 8. **Disk update.** Advances every disk particle and absorbs those inside their hole's shadow. It returns the absorbed mass and count per hole index. Rivals' gains are multiplied by `RIVAL_APPETITE`, and the smoothed feed rate drives `appetite` and the jets. Then the player loses `HAWKING` of its mass per second, plus `BOOST_COST` if `steer()` flagged it as boosting.
-9. **Sides, rings and win check.** Recomputes who outweighs you and the vignette strength, and checks for victory. For each black hole it:
+9. **Sides, rings, win check and checkpoint.** Recomputes who outweighs you and the vignette strength, checks for victory, and saves a checkpoint if one is waiting and it's safe (see [Checkpoints](#checkpoints)). For each black hole it:
    - eases `hole.tint` toward its side's photon ring color (`TINTS`; all neutral once you're not alive), in real time
    - places its ring near you: solid red at its danger radius if it outweighs you, dashed blue at `RINGS.prey` shadow radii if not, never under `RINGS.minPixels` on screen (measured with last frame's camera)
    - notices when it changes sides within ring range. Its `flash` goes to 1 and fades over `SIDE_CHANGE.flash` real seconds, brightening and swelling the ring, and `audio.sideChange()` plays once per frame at most. `hole.cuedAt` keeps it quiet for `SIDE_CHANGE.cooldown` seconds of game time.
@@ -97,7 +97,7 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 
 ### Lensing (`lensFragmentShader`)
 
-- Up to 24 black holes (`MAX_LENSES`) per frame. Each is projected to screen space on the CPU. It's skipped if its shadow is under 0.4 px, or if it's off screen by more than its deflection reach.
+- Up to 32 black holes (`MAX_LENSES`) per frame. Each is projected to screen space on the CPU. It's skipped if its shadow is under 0.4 px, or if it's off screen by more than its deflection reach.
 - For each lens, the shader:
   - applies the **point-lens equation**, so light at distance *d* comes from *d − E²/d*, with *E* = 1.3 × shadow. This wraps the background into an Einstein ring.
   - fades the deflection out between 6× and 14× *E*
@@ -137,26 +137,29 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 
 | Thing | Count |
 |-------|------:|
-| Capturable stars (galaxies + nebulae + loose) | 360,879 |
+| Capturable stars (galaxies + nebulae + loose) | 618,183 |
 | Disk particles (max) | 32,768 |
 | Jet particles (max) | 4,096 |
 | Backdrop stars | 3,000 |
-| Draw calls for the scene | 21 (18 fields, disk, jets, backdrop) + 1 per visible ring (rings around black holes near you, and the reach ring during a hint) |
+| Draw calls for the scene | 27 (24 fields, disk, jets, backdrop) + 1 per visible ring (rings around black holes near you, and the reach ring during a hint) |
 | Full-screen passes | lens, bloom (several mip levels), output |
 
-- **CPU cost** is dominated by `disk.update()`, which is O(live disk particles), and by capture queries, which only touch cells near each roamer. Gravity is O(roamers × holes), which is 6 × 18.
+- **CPU cost** is dominated by `disk.update()`, which is O(live disk particles), and by capture queries, which only touch cells near each roamer. Gravity is O(roamers × holes), which is 8 × 24.
+- **Fields are frustum-culled** as whole `Points` objects, so only galaxies in view cost vertex work. The four giants past Andromeda are capped at 60,000 stars each (`MAX_GALAXY_STARS` in `universe.js`). Their stars are drawn bigger, so they look about as full as Andromeda without doubling the load.
 - **GPU cost** is dominated by fill rate: additive points, plus bloom and lensing at full resolution. The renderer caps the pixel ratio at 2. On weak GPUs, lowering it to 1 in `main.js` is the biggest win.
 
 ## HUD (`hud.js`)
 
 - Plain DOM layered over the canvas, at z-index 5. The hints sit at 6 (their letterbox bars at 4, under the HUD), the end-of-game card at 11 and the settings gear at 12.
-- It's kept minimal for immersion: a frameless mass readout with a thin feeding meter, the danger vignette, and edge arrows. There's no intro panel and there are no toasts. The only other things on screen during play are the hints.
+- It's kept minimal for immersion: a frameless mass readout with a thin feeding meter, the danger vignette, and edge arrows. There's no intro panel. The only other things on screen during play are the hints, and a line under the meter for 4 s when a checkpoint is saved ("Checkpoint · Triangulum core"). That's one CSS animation, restarted for each checkpoint.
 - Edge arrows are drawn for the five nearest live black holes, and only while they're off screen. They move with `transform` only and never change text, so nothing is measured or laid out per frame.
 - Only the end card accepts pointer events, so you can orbit the camera behind it. (The settings gear in the top-left corner belongs to `settings.js`.)
+- The game-over card offers **Retry (R)** and **Start over** once you have a checkpoint, and **Try again (R)** before that. The victory card's **Play again** starts over.
+- `createHud()` also adds the settings menu's Game tab: **Retry**, with what it goes back to in small print, and **Start over**. Start over throws the checkpoint away, so its first press only turns it into "Press again to start over" for 4 s, or until the menu closes.
 
 ## Hints (`hints.js`)
 
-The game starts with no introduction. `createHints({ controls })` teaches it as you play, keeping its own DOM and progress the same way the HUD does. Progress survives a restart (**R**) but not a reload.
+The game starts with no introduction. `createHints({ controls })` teaches it as you play, keeping its own DOM and progress the same way the HUD does. Progress survives a retry or a restart but not a reload.
 
 - **Control lessons.** Drift, then boost, then look around, each a gesture that loops on a 4.4 s period: fade in, play, fade out, pause. Each comes `LESSONS.wait` seconds after the one before it is done, and shows until you've done enough of it (`LESSONS` in `config.js`). Use counts from the start whether or not its lesson is showing, so a lesson you've already done is skipped.
   - Drift counts seconds at full thrust (`|thrust| / (THRUST · S · boost)`), boost counts seconds of `player.boosting`, and look counts the radians the camera turns, read from `controls.getAzimuthalAngle()` and `getPolarAngle()`. Only you turn the camera: the game's follow moves it but keeps its angles.
@@ -184,7 +187,7 @@ The game starts with no introduction. `createHints({ controls })` teaches it as 
 
 ## Pointer input (`pointer.js`)
 
-- `createPointer({ camera, controls, element, settings })` listens for pointer events on the canvas and keeps its own input state, the same way the HUD keeps its DOM. It adds the Touch section to the settings menu.
+- `createPointer({ camera, controls, element, settings })` listens for pointer events on the canvas and keeps its own input state, the same way the HUD keeps its DOM. It adds the Touch tab to the settings menu.
 - **Mouse.** Thrust grows from 0 at `POINTER.dead` to full at `POINTER.full`. Both are measured as on-screen distance from the black hole, as shares of the screen height, so the feel doesn't change with zoom or tilt. A cursor above the horizon falls back to the ray's flattened direction.
   - While the left button is down, OrbitControls is orbiting the camera, so the last push is held rather than following a cursor that moves with the camera.
   - The right button boosts. Pan is disabled, so OrbitControls doesn't use that button.
@@ -192,7 +195,7 @@ The game starts with no introduction. `createHints({ controls })` teaches it as 
 - **Touch.**
   - `controls.touches` is set to `{ ONE: null, TWO: DOLLY_ROTATE }`, so one finger belongs to the game and two fingers move the camera.
   - Only a lone finger counts. A second finger cancels it, and nothing more happens until every finger has lifted.
-  - What it does depends on the touch mode, picked in the **Touch** section of the settings menu (only shown where `(any-pointer: coarse)` matches) and kept in `localStorage`. The default is `TOUCH_MODE` (`joystick`). `pointer.mode` reports the one in use.
+  - What it does depends on the touch mode, picked in the **Touch** tab of the settings menu (only shown where `(any-pointer: coarse)` matches) and kept in `localStorage`. The default is `TOUCH_MODE` (`joystick`). `pointer.mode` reports the one in use.
 
     | Mode | Steer | Boost |
     |------|-------|-------|
@@ -201,12 +204,12 @@ The game starts with no introduction. `createHints({ controls })` teaches it as 
     | tilt | Tip the phone, measured from a level reading (`TILT`) | Any lone finger held down |
 
   - **Joystick.** The `.bh-stick` element is moved only on pointer events, not every frame. Its **Visible** switch hides it; the joystick works the same either way.
-  - **Tilt.** It reads `deviceorientation`. From `beta` and `gamma` it works out which way a marble on the screen would roll (gravity along the screen, which doesn't depend on the compass heading `alpha`), then turns that into screen axes using `screen.orientation.angle`. The first reading, after you pick tilt, is the level that the lean is measured from. A restart (`recentre()`), picking tilt again, or the screen rotating all take a new level. The lean's size, as an angle, goes through the `TILT.dead` / `TILT.full` ramp, and its direction maps onto the camera axes: tipping the top away is forward, like pushing the joystick up.
+  - **Tilt.** It reads `deviceorientation`. From `beta` and `gamma` it works out which way a marble on the screen would roll (gravity along the screen, which doesn't depend on the compass heading `alpha`), then turns that into screen axes using `screen.orientation.angle`. The first reading, after you pick tilt, is the level that the lean is measured from. A retry or restart (`recentre()`), picking tilt again, or the screen rotating all take a new level. The lean's size, as an angle, goes through the `TILT.dead` / `TILT.full` ramp, and its direction maps onto the camera axes: tipping the top away is forward, like pushing the joystick up.
   - Where `DeviceOrientationEvent.requestPermission` exists (iOS, and some Chrome builds), tilt asks first. Browsers only show that prompt during a tap, so if tilt is a remembered choice at load, it asks at the next tap. If permission is refused, or no reading arrives within 2 s (there's no sensor, or the page isn't served over https), Tilt is greyed out and you steer with the joystick. The stored choice stays, in case it works next time.
 
 ## Audio (`audio.js`)
 
-Every sound is synthesised with the Web Audio API. There are no audio files, and `three` is still the only dependency. `createAudio({ camera, settings })` keeps its own nodes, the same way the HUD keeps its DOM, and adds its switches and the Feeding section to the settings menu.
+Every sound is synthesised with the Web Audio API. There are no audio files, and `three` is still the only dependency. `createAudio({ camera, settings })` keeps its own nodes, the same way the HUD keeps its DOM, and adds the Sound tab to the settings menu: its switches and the Feeding section.
 
 - **Startup.** Browsers allow sound only after a click, tap or key press, so the `AudioContext` and the live layers are built at the first one (`pointerdown`, `pointerup`, `touchend` or `keydown`). The music doesn't need a gesture to render, so that starts as soon as the module loads.
 - **Mixing.** Each bus sets its level from `AUDIO` in `config.js`:
@@ -239,7 +242,7 @@ Every sound is synthesised with the Web Audio API. There are no audio files, and
     | `whoosh` | Low brown noise panned around you at the disk's speed, swelling as it passes the middle |
     | `gulps` | Soft low notes sliding down into place, 1 to 4 a second as feeding rises |
 
-  - Which one plays is the player's choice. The default is `AUDIO.feeding` (`tuned`). The **Feeding** section of the settings menu picks another, which is kept in `localStorage`. Picking one plays it for 2.5 s as if you were feeding hard, so you hear what you chose without flying into stars. Their levels were matched by measurement, allowing for low sounds seeming quieter, so switching doesn't change how loud feeding is.
+  - Which one plays is the player's choice. The default is `AUDIO.feeding` (`tuned`). The **Feeding** section of the settings menu's Sound tab picks another, which is kept in `localStorage`. Picking one plays it for 2.5 s as if you were feeding hard, so you hear what you chose without flying into stars. Their levels were matched by measurement, allowing for low sounds seeming quieter, so switching doesn't change how loud feeding is.
 - **Events.** `fall()` and `swallow()` in `game.js` call these, and step 9 of the frame calls `sideChange`:
 
   | Call | When | Sound |
@@ -252,14 +255,26 @@ Every sound is synthesised with the Web Audio API. There are no audio files, and
   | `distant` | Two other holes merge | A muffled thud, panned by the camera and quieter with distance |
 
   When you fall in, the horizon filter closes and the music's `playbackRate` drops to a quarter, so time seems to stall. `reset()` opens the filter again, restores the rate, and silences any effect that's still ringing.
-- **Mute.** The gear in the top-left corner opens switches for Sound (the master mute, also **M**), Music and Effects (which covers the ambience too), and below them the Feeding choices (see [Settings](#settings-settingsjs)). Each setting is kept in `localStorage`. The master mute fades out and then suspends the context, so muted audio costs nothing; Music and Effects just zero their bus gains. The context is also suspended while the tab is hidden.
+- **Mute.** The settings menu's Sound tab has switches for Sound (the master mute, also **M**), Music and Effects (which covers the ambience too), and below them the Feeding choices (see [Settings](#settings-settingsjs)). Each setting is kept in `localStorage`. The master mute fades out and then suspends the context, so muted audio costs nothing; Music and Effects just zero their bus gains. The context is also suspended while the tab is hidden.
 
 ## Settings (`settings.js`)
 
-- `createSettings()` builds the gear in the top-left corner and its panel, and owns nothing else. Modules add rows with `addSwitch`, `addGroup` and `addChoices`, in the order they're created: the audio's switches and its Feeding section, then the pointer's Touch section. A group made with `{ touch: true }` only shows where `(any-pointer: coarse)` matches.
+- `createSettings()` builds the gear in the top-left corner and its panel, and owns nothing else. The panel is a row of tabs, each showing one page, so no page gets crowded. Each module adds its tab with `addTab(name)`, in the order they're created: the HUD's **Game** tab, the audio's **Sound** tab, then the pointer's **Touch** tab. A tab made with `{ touch: true }` only shows where `(any-pointer: coarse)` matches.
+- Modules fill their page with `addGroup(page, heading)`, `addSwitch(parent, …)`, `addChoices(group, …)` and `addButton(parent, label, key, onClick)`. A button has a line of small print under its label, and the key it's bound to beside it. A group with the `bh-columns` class puts its choices two to a row, as the feeding sounds are. `onClose(callback)` runs something whenever the panel closes, and `close()` closes it.
+- The tab you picked stays picked while the panel is closed, and the tabs stay at the top while a long page scrolls.
 - Each module keeps its own settings and remembers them with `readFlag` / `writeFlag` / `readChoice` / `writeChoice`, which treat unavailable `localStorage` (private browsing, `file://`) as nothing stored.
 - The panel closes on a click or tap outside it, or Escape. It scrolls when it's taller than the screen, as on a phone held sideways. Inputs blur after each change, so Space and the arrow keys go back to the game.
 
+## Checkpoints
+
+Each core or rival you swallow makes a checkpoint due (`pending` in `game.js`). Step 9 saves it in the first frame where you're alive, nothing heavier is within `CHECKPOINT.safe` (8) of its danger radii (`danger < 1 / safe²`), and no rival is hunting you. So a retry never drops you somewhere you can't get away from. If you're swallowed before it's saved, Retry goes back to the checkpoint before.
+
+- `saveCheckpoint()` copies everything that changes as you play: each field's alive flags, remaining count and rotation; each black hole's mass, sizes, state, eater (by index), fall progress, feeding, side of you, position, velocity and rival AI; the disk pool (`disk.save()`, live particles only); the stats; whether you've won; and the camera's offset and zoom. The alive flags are most of it, about 2.5 MB. Only the last checkpoint is kept, in memory, so a reload loses it.
+- `restore()` writes all of that back and uploads each field's alive flags whole, like `reset()`. Jets are cleared, not saved. `disk.load()` sets the draw range to 0 until the next `update()` places the particles and uploads them.
+- `reset()` and `restore()` both end in `resume()`. It puts the camera back on you, clears the jets, drops a checkpoint that was still waiting, hides the end card, ends any slowed moment, re-levels tilt and resets the audio.
+- **R** and Retry call `retry()`: the last checkpoint, or `reset()` if there isn't one. Start over (`startOver()`) forgets the checkpoint and resets.
+- Anything you add that changes during play has to be saved and restored here too. Otherwise a retry carries it over from the run you just lost.
+
 ## Lifecycle
 
-`dispose()` removes the window listeners (keyboard, blur, resize), the pointer and tilt listeners, the audio's unlock and visibility listeners, and the HUD, hints, joystick and settings menu elements. It closes the `AudioContext`, and disposes the post-processing passes, the composer, and every geometry, material and texture in the scene. It leaves the renderer, camera and controls alone, because the host owns them.
+`dispose()` removes the window listeners (keyboard, blur, resize), the pointer and tilt listeners, the audio's unlock and visibility listeners, the Start over button's timer, and the HUD, hints, joystick and settings menu elements. It closes the `AudioContext`, and disposes the post-processing passes, the composer, and every geometry, material and texture in the scene. It leaves the renderer, camera and controls alone, because the host owns them.

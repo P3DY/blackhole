@@ -15,10 +15,16 @@ function formatTime(seconds) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-// The DOM layer over the canvas, kept quiet during play: your mass and feeding rate, a danger vignette, and
-// arrows at the screen edge toward nearby black holes that are off screen. Everything else waits for the
-// end-of-game card. `totals` is { cores, rivals } for its "x / y" counters.
-export function createHud(totals, onRestart) {
+// What you swallowed to reach a checkpoint: "the Triangulum core", or a rival's name.
+const swallowed = (checkpoint) => (checkpoint.kind === 'core' ? `the ${checkpoint.name} core` : checkpoint.name);
+
+// The DOM layer over the canvas, kept quiet during play: your mass and feeding rate, a danger vignette, arrows
+// at the screen edge toward nearby black holes that are off screen, and a brief note when a checkpoint is saved.
+// Everything else waits for the end-of-game card. `totals` is { cores, rivals } for its "x / y" counters.
+//
+// It also adds the Game tab to `settings` (the menu): retry from the last checkpoint, or start over.
+// `onRetry` and `onStartOver` do those, from the menu or the end card.
+export function createHud({ totals, settings, onRetry, onStartOver }) {
   const root = document.createElement('div');
   root.className = 'bh';
   root.innerHTML = `
@@ -27,6 +33,7 @@ export function createHud(totals, onRestart) {
     <div class="bh-readout">
       <div class="bh-mass"></div>
       <div class="bh-meter"><span></span></div>
+      <div class="bh-saved"></div>
     </div>`;
 
   // Its own element, so it can sit above the hints.
@@ -46,6 +53,36 @@ export function createHud(totals, onRestart) {
   const vignette = $('.bh-vignette');
   const mass = $('.bh-mass');
   const meter = $('.bh-meter span');
+  const saved = $('.bh-saved');
+  saved.addEventListener('animationend', () => saved.classList.remove('show'));
+
+  // --- The Game tab -----------------------------------------------------------------
+  //
+  // Starting over throws your checkpoint away, so it takes a second press within a few seconds to be sure.
+
+  const page = settings.addTab('Game');
+  const retry = settings.addButton(page, 'Retry', 'R', () => {
+    settings.close();
+    onRetry();
+  });
+  let sure = 0; // the timeout that stops waiting for the second press
+  const startOver = settings.addButton(page, 'Start over', '', () => {
+    if (!sure) {
+      confirmStartOver(true);
+      return;
+    }
+    confirmStartOver(false);
+    settings.close();
+    onStartOver();
+  });
+
+  function confirmStartOver(value) {
+    clearTimeout(sure);
+    sure = value ? setTimeout(() => confirmStartOver(false), 4000) : 0;
+    startOver.button.classList.toggle('confirm', value);
+    startOver.label.textContent = value ? 'Press again to start over' : 'Start over';
+  }
+  settings.onClose(() => confirmStartOver(false));
 
   // Arrows for the nearest few black holes, shown only while they're off screen: blue if you outweigh it, red if not.
   const markers = Array.from({ length: 5 }, () => {
@@ -123,19 +160,45 @@ export function createHud(totals, onRestart) {
       });
     },
 
-    showGameOver(eater, stats) {
-      const body =
+    // `checkpoint` is the last one saved, if any: { name, kind, stats } (see setCheckpoint).
+    showGameOver(eater, stats, checkpoint) {
+      let body =
         eater.kind === 'core'
           ? `You crossed the event horizon of the ${eater.name} core. It now weighs ${formatMass(eater.mass)}.`
           : `${eater.name} swallowed you. It now weighs ${formatMass(eater.mass)}.`;
-      showOverlay('Swallowed', body, summary(stats), [['Try again (R)', onRestart]]);
+      if (checkpoint) body += ` Retry from just after you swallowed ${swallowed(checkpoint)}.`;
+      const actions = checkpoint
+        ? [
+            ['Retry (R)', onRetry],
+            ['Start over', onStartOver],
+          ]
+        : [['Try again (R)', onRetry]];
+      showOverlay('Swallowed', body, summary(stats), actions);
     },
 
     showVictory(stats) {
       showOverlay('The universe is yours', 'Every core and every rival is gone. You are the last black hole.', summary(stats), [
         ['Keep drifting', () => hud.hideOverlay()],
-        ['Play again (R)', onRestart],
+        ['Play again', onStartOver],
       ]);
+    },
+
+    // Shows what Retry goes back to: `checkpoint` ({ name, kind, stats } of the black hole you swallowed, and
+    // the stats then), or null for the start.
+    setCheckpoint(checkpoint) {
+      retry.note.textContent = checkpoint
+        ? `To just after you swallowed ${swallowed(checkpoint)}, at ${formatTime(checkpoint.stats.time)}.`
+        : 'From the start. Swallow a core or a rival to save a checkpoint.';
+      startOver.note.textContent = checkpoint ? 'Back to the beginning. Your checkpoint is lost.' : 'Back to the beginning.';
+    },
+
+    // A checkpoint has just been saved: say so, briefly.
+    noteCheckpoint(checkpoint) {
+      hud.setCheckpoint(checkpoint);
+      saved.textContent = `Checkpoint · ${checkpoint.kind === 'core' ? `${checkpoint.name} core` : checkpoint.name}`;
+      saved.classList.remove('show');
+      void saved.offsetWidth; // restart the animation if the last note is still showing
+      saved.classList.add('show');
     },
 
     hideOverlay() {
@@ -143,10 +206,12 @@ export function createHud(totals, onRestart) {
     },
 
     dispose() {
+      clearTimeout(sure);
       root.remove();
       overlay.remove();
     },
   };
 
+  hud.setCheckpoint(null);
   return hud;
 }

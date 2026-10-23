@@ -36,6 +36,13 @@ export const PULL = 187;
 export const CAMERA_DISTANCE = 8; // in reach radii
 export const CAMERA_ELEVATION = 0.9; // radians above the galactic plane
 
+// --- Checkpoints ------------------------------------------------------------------
+//
+// Every core or rival you swallow saves a checkpoint, which Retry (R) goes back to. It waits until it's safe:
+// nothing heavier within `safe` of its danger radii, and no rival hunting you. So a retry never starts you
+// somewhere you can't get away from.
+export const CHECKPOINT = { safe: 8 };
+
 // --- Rivals -----------------------------------------------------------------------
 
 // Other roaming black holes, named for mythical devourers of suns:
@@ -46,6 +53,8 @@ export const RIVALS = [
   ['Apep', 'Triangulum', 0.7],
   ['Charybdis', 'Whirlpool', 0.7],
   ['Fenrir', 'Andromeda', 0.5],
+  ['Rahu', 'Condor', 0.6],
+  ['Bakunawa', 'IC 1101', 0.5],
 ];
 export const RIVAL_APPETITE = 0.3; // rivals keep this share of the stars they swallow; you keep all of it
 export const RIVAL_PACE = { feed: 0.6, travel: 0.85, hunt: 1, flee: 1 }; // thrust, as a share of yours unboosted
@@ -79,7 +88,7 @@ export const WARP = { outer: 2.2, shrink: 0.25, twist: 0.5, flatten: 0.5 };
 export const MAX_WARPS = 8;
 
 export const STAR_SIZE = 14; // point size scale, multiplied by the device pixel ratio
-export const MAX_LENSES = 24;
+export const MAX_LENSES = 32;
 export const EINSTEIN = 1.3; // Einstein-ring radius, in shadow radii
 
 // --- Who outweighs whom -----------------------------------------------------------
@@ -123,7 +132,16 @@ export const NEBULA_COLORS = [
 ];
 
 // The main path: each galaxy one tier bigger than the last, spiralling outward.
-export const MAIN_PATH = ['Sextans Dwarf', 'Small Magellanic Cloud', 'Triangulum', 'Whirlpool', 'Sombrero', 'Andromeda'];
+export const MAIN_PATH = [
+  'Sextans Dwarf',
+  'Small Magellanic Cloud',
+  'Triangulum',
+  'Whirlpool',
+  'Sombrero',
+  'Andromeda',
+  'Condor',
+  'IC 1101',
+];
 // Side trips: [name, tier, index of the main-path galaxy they sit near].
 export const SIDE_TRIPS = [
   ['Pinwheel', 0.6, 1],
@@ -132,6 +150,8 @@ export const SIDE_TRIPS = [
   ['Cartwheel', 2.6, 3],
   ['Milky Way', 3.4, 4],
   ['Black Eye', 4.3, 5],
+  ['Centaurus A', 5.5, 6],
+  ['Malin 1', 6.4, 7],
 ];
 
 export const UNIVERSE_SEED = 1987; // the same universe on every visit
@@ -177,6 +197,6 @@ export const KEYS = {
   left: ['KeyA', 'ArrowLeft'],
   right: ['KeyD', 'ArrowRight'],
   boost: ['ShiftLeft', 'ShiftRight'],
-  restart: ['KeyR'],
+  retry: ['KeyR'], // back to the last checkpoint, or the start if there isn't one
   mute: ['KeyM'],
 };

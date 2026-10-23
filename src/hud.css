@@ -53,6 +53,39 @@
   background: linear-gradient(270deg, #ff7a3d, #ffe0a0, #a8c4ff);
 }
 
+/* A checkpoint was just saved: a line under the meter that fades in, stays a moment and fades away. */
+.bh-saved {
+  position: absolute;
+  top: 100%;
+  right: 0; /* a long name grows to the left, not off screen */
+  margin-top: 7px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: #c8d8ff;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+  opacity: 0;
+}
+
+.bh-saved.show {
+  animation: bh-saved 4s ease-in-out;
+}
+
+@keyframes bh-saved {
+  0% {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  12%,
+  75% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 /* Edge arrows toward off-screen black holes: red outweighs you, blue is prey. */
 .bh-marker {
   --tint: #ff6b6b;

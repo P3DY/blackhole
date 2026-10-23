@@ -42,7 +42,7 @@ These constants keep progression balanced across tiers:
 
 | Constant | Default | Effect |
 |----------|--------:|--------|
-| `RIVALS` | 5 entries | `[name, home galaxy name, mass as a share of that galaxy's arrival mass]`. The home name must match a galaxy in `MAIN_PATH` or `SIDE_TRIPS`. |
+| `RIVALS` | 7 entries | `[name, home galaxy name, mass as a share of that galaxy's arrival mass]`. The home name must match a galaxy in `MAIN_PATH` or `SIDE_TRIPS`. |
 | `RIVAL_APPETITE` | 0.3 | The share of absorbed mass a rival keeps. Raise it and rivals keep up with you; lower it and you outgrow them sooner. |
 | `RIVAL_PACE` | feed 0.6 · travel 0.85 · hunt 1 · flee 1 | Thrust per mode, as a share of your unboosted thrust. |
 | `FEED_TIME` | 40 s | How long a rival feeds on one galaxy before moving on. |
@@ -65,6 +65,15 @@ Boosting costs mass, and a smaller you is slower, so the margin shrinks the long
 ```
 
 If you raise `RIVAL_PACE.hunt`, `HUNT_TIME`, `HAWKING` or `BOOST_COST`, or lower `HUNT_PREY`, check this inequality or some hunts become unwinnable.
+
+## Checkpoints
+
+| Constant | Default | Effect |
+|----------|--------:|--------|
+| `CHECKPOINT` | safe 8 | Each core or rival you swallow saves a checkpoint once nothing heavier is within `safe` of its danger radii, and no rival is hunting you. |
+
+- **Lower `safe` and a retry can start you too close.** Retrying puts you back at full speed, with no slowed moment to warn you (you've already seen it). At 8 danger radii you have room to turn away even if you were boosting straight at it (see [Hints](#hints) for the distances).
+- Raise it and checkpoints wait longer, so one might not be saved before you're swallowed. While you're feeding beside a heavier core, a checkpoint can't be saved until you leave it.
 
 ## Accretion and effects
 
@@ -120,8 +129,8 @@ Check these before adding content:
 
 | Limit | Default | What happens when exceeded |
 |-------|--------:|----------------------------|
-| `MAX_WARPS` | 8 | The number of roaming holes that warp **and capture** stars. Only the first 8 live roamers (you plus 7 rivals) do either. **If you add more than 7 rivals, raise this.** It's a shader loop bound, so the cost is small. |
-| `MAX_LENSES` | 24 | The number of black holes the lens pass can draw at once. There are currently 18 (you, 5 rivals, 12 cores). **If you add galaxies or rivals beyond 24 total holes, raise this.** |
+| `MAX_WARPS` | 8 | The number of roaming holes that warp **and capture** stars. Only the first 8 live roamers (you plus 7 rivals) do either. There are 7 rivals now, so it's full. **If you add a rival, raise this.** It's a shader loop bound, so the cost is small. |
+| `MAX_LENSES` | 32 | The number of black holes the lens pass can draw at once. There are currently 24 (you, 7 rivals, 16 cores). **If you add galaxies or rivals beyond 32 total holes, raise this.** |
 | `DISK_CAPACITY` | 32,768 | Captured stars in flight across all disks. When the pool is full, capture pauses until particles are absorbed. |
 | `CAPTURES_PER_FRAME` | 1,500 | Spreads big captures over several frames. Raising it gives faster feeding on fast machines, but frame spikes on slow ones. |
 | `JET_CAPACITY` | 4,096 | Jet particles. When full, the oldest are overwritten. |
@@ -132,10 +141,11 @@ Check these before adding content:
 - **Universe layout:** change `UNIVERSE_SEED` for a different arrangement. Any change to the planning code or the content lists also reshuffles everything generated after it, because the layout and the geometry share one random stream.
 - **Galaxies:** add a name to `MAIN_PATH` to get the next whole tier, or add `[name, tier, nearIndex]` to `SIDE_TRIPS`. Here `nearIndex` is the main-path galaxy to place it beside. Colors are picked from `PALETTES`.
 - **Star counts** are set in `universe.js` and `fields.js`:
-  - galaxies: `12000 · (radius / 4)^0.65`
+  - galaxies: `12000 · (radius / 4)^0.65`, capped at 60,000 (`MAX_GALAXY_STARS` in `universe.js`). The cap only affects the four galaxies past Andromeda.
   - nebulae: 2,400 each
-  - loose stars: 9,000.
-  These counts drive both GPU load and how many captures there are to make.
+  - loose stars: 0.2 per square unit over the box around the galaxies, outside 1.15 radii of every galaxy. Beside a galaxy of radius R wider than 42 (about Andromeda's), only `(42 / R)²` of them are kept. You see those parts of the universe from further away, so this keeps a view there from holding more loose stars than one beside Andromeda. That comes to about 21,500.
+  These counts drive both GPU load and how many captures there are to make. Each galaxy's stars are worth `STARS_MASS` × its arrival mass however many there are, so the counts don't change the balance.
+- **Universe size:** the main path gets wider by `TIER_GROWTH` per step and the spacing grows with it, so each tier you add makes the universe about 1.7× wider. The far plane in `main.js` (5000) has to cover the whole universe at the furthest zoom (40 reach radii at your final mass). The camera keeps that zoom, so check it if you add tiers.
 - **Controls:** `KEYS` maps actions to `KeyboardEvent.code` values. If you change the keys, update the keycaps drawn by the control lessons in `hints.js`. Every listed code has its default browser action suppressed.
   - `POINTER` sets the mouse dead zone and the distance for full thrust, as shares of the screen height (defaults 0.03 and 0.2). The `follow` touch mode uses it too.
   - `TOUCH_MODE` is the touch mode you get until you pick another in the settings menu: `'joystick'` (the default), `'follow'` or `'tilt'`.

@@ -4,7 +4,7 @@ import { readChoice, readFlag, writeChoice, writeFlag } from './settings.js';
 
 const { clamp, degToRad, radToDeg } = THREE.MathUtils;
 
-// The ways to steer by touch: [key, label, description]. The Touch section of the settings menu picks one.
+// The ways to steer by touch: [key, label, description]. The Touch tab of the settings menu picks one.
 const MODES = [
   ['joystick', 'Joystick', 'Drag from where your finger lands; past the ring boosts'],
   ['follow', 'Follow finger', 'Head for your finger; double-tap and hold to boost'],
@@ -22,7 +22,7 @@ const NO_SENSOR = 2000; // ms to wait for a first tilt reading before giving up 
 // holding the right button boosts. Keys take over whenever they're held, until the mouse moves again.
 //
 // Touch: two fingers orbit and zoom the camera. What one finger does depends on the mode, which the Touch
-// section of the settings menu picks (`settings` is the menu):
+// tab of the settings menu picks (`settings` is the menu):
 // - joystick: one finger is a joystick centred where it landed; drag past its ring to boost. The ring and knob
 //   can be hidden.
 // - follow: the black hole heads for the point under your finger, as it does for the cursor. Double-tap and
@@ -80,17 +80,12 @@ export function createPointer({ camera, controls, element, settings }) {
 
   // --- Settings ---------------------------------------------------------------------
 
-  const group = settings.addGroup('Touch', { touch: true });
+  const group = settings.addGroup(settings.addTab('Touch', { touch: true }), 'Steer with');
   const choices = settings.addChoices(group, MODES, choose);
-  const visible = settings.addSwitch(
-    'Visible',
-    'Show the joystick while you steer with it',
-    (on) => {
-      stickHidden = !on;
-      writeFlag(STICK_STORAGE, stickHidden);
-    },
-    group,
-  );
+  const visible = settings.addSwitch(group, 'Visible', 'Show the joystick while you steer with it', (on) => {
+    stickHidden = !on;
+    writeFlag(STICK_STORAGE, stickHidden);
+  });
   const visibleRow = visible.closest('label');
   visibleRow.classList.add('bh-sub');
   choices.joystick.closest('label').after(visibleRow); // it belongs to the joystick
