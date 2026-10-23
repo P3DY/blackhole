@@ -23,7 +23,6 @@ export function createHole(kind, name, mass) {
     appetite: 0, // feedRate as a share of FULL_FEED: drives the photon ring and jets
     jetsDue: 0,
     edible: false, // lighter than you
-    noticedAt: -Infinity, // when the HUD last announced a change in who outweighs whom
     ring: null,
     ai: null, // rivals only: { mode, galaxy, timer, rest }
   };

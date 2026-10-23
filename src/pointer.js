@@ -25,7 +25,6 @@ export function createPointer({ camera, controls, element }) {
   const mouse = { active: false, x: 0, y: 0, fromX: 0, fromY: 0, buttons: 0 };
   const touches = new Set();
   let finger = null; // { id, x0, y0, x, y } while one finger steers
-  let input = null; // 'mouse' or 'touch', whichever steered last
 
   const raycaster = new THREE.Raycaster();
   const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -54,7 +53,6 @@ export function createPointer({ camera, controls, element }) {
     }
     if (event.isPrimary) touches.clear(); // the first finger down, so drop any we never saw lift
     touches.add(event.pointerId);
-    input = 'touch';
     stopMouse();
     // Only a lone finger steers; a second one hands the gesture to the camera.
     finger = touches.size === 1 ? { id: event.pointerId, x0: event.clientX, y0: event.clientY, x: event.clientX, y: event.clientY } : null;
@@ -72,10 +70,7 @@ export function createPointer({ camera, controls, element }) {
     mouse.x = event.clientX;
     mouse.y = event.clientY;
     mouse.buttons = event.buttons;
-    if (!mouse.active && Math.hypot(mouse.x - mouse.fromX, mouse.y - mouse.fromY) > 4) {
-      mouse.active = true;
-      input = 'mouse';
-    }
+    if (!mouse.active && Math.hypot(mouse.x - mouse.fromX, mouse.y - mouse.fromY) > 4) mouse.active = true;
   }
 
   function onPointerUp(event) {
@@ -143,11 +138,6 @@ export function createPointer({ camera, controls, element }) {
   }
 
   return {
-    // 'mouse' or 'touch', whichever steered last (null before either has).
-    get input() {
-      return input;
-    },
-
     get boost() {
       return Boolean(mouse.buttons & 2) || (finger !== null && fingerReach() > STICK.radius * STICK.boost);
     },

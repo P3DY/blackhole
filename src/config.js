@@ -115,13 +115,6 @@ export const SIDE_TRIPS = [
 
 export const UNIVERSE_SEED = 1987; // the same universe on every visit
 
-// Onboarding: [seconds in, message].
-export const HINTS = [
-  [0, 'Drift into stars to capture them. They spiral in and feed you.'],
-  [2.5, 'Red rings mark black holes that outweigh you. Cross one and you are not coming back.'],
-  [9, 'Rival black holes roam too. Outgrow them and they run; stay small and they hunt you.'],
-];
-
 // Mouse: steers toward the point under the cursor, with no push within `dead` of the black hole and full
 // thrust from `full`, both as shares of the screen height.
 export const POINTER = { dead: 0.03, full: 0.2 };

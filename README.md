@@ -47,7 +47,7 @@ On a touch screen:
 - Every galaxy has a **supermassive core**. Once you outweigh it, fly into it to take its mass.
 - Five **rivals** roam between galaxies and eat the same stars. They keep only 30% of what they eat, so you can outgrow them. Rivals hunt you while you're smaller (boosting outruns them) and flee once you're bigger.
 - **Hawking radiation** slowly shrinks you (0.3% of your mass per second), and boosting burns another 1.5% per second, so keep eating.
-- Labels show the five nearest black holes. `×2.3` means it is 2.3 times your mass, and **prey** means you outweigh it. When one is off screen, an arrow at the edge points to it.
+- The HUD stays out of the way: your mass and feeding rate in the corner, and arrows at the screen edge toward the nearest black holes when they're out of view (blue: you outweigh it, red: it outweighs you). There are no pop-up messages during play.
 - You win when every core and every rival is gone.
 
 [docs/gameplay.md](docs/gameplay.md) has the full rules and the rival AI.
@@ -69,7 +69,7 @@ src/
   jets.js           ring-buffered relativistic-jet particles
   shaders.js        all GLSL: star fields, disks, jets, lensing pass
   pointer.js        mouse and touch steering, and the touch joystick
-  hud.js / hud.css  DOM overlay: stats panel, labels, toasts, end-of-game card
+  hud.js / hud.css  DOM overlay: mass readout, edge arrows, vignette, end-of-game card
   style.css         page base styles and intro panel
   utils.js          seeded random, backdrop starfield, GPU disposal helper
 docs/
@@ -88,7 +88,7 @@ docs/
 
 ## Browser support
 
-The game needs WebGL 2, which every current desktop and mobile browser has. It plays with keyboard, mouse or touch. On screens narrower than 640 px, the intro panel fades out at the first touch or click so it doesn't cover the stats. Performance depends mostly on fill rate: with additive particles, bloom and lensing at full resolution, a low-end GPU at a high pixel ratio is the usual bottleneck. The renderer caps the pixel ratio at 2.
+The game needs WebGL 2, which every current desktop and mobile browser has. It plays with keyboard, mouse or touch. The intro panel fades out at the first click, touch, key press or scroll, or after 20 seconds. Performance depends mostly on fill rate: with additive particles, bloom and lensing at full resolution, a low-end GPU at a high pixel ratio is the usual bottleneck. The renderer caps the pixel ratio at 2.
 
 ## Origin
 

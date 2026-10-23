@@ -15,10 +15,17 @@ controls.enableDamping = true;
 
 const game = createGame({ renderer, camera, controls });
 
-// On small screens the intro covers the stats panel, so it gets out of the way once you start playing.
-renderer.domElement.addEventListener('pointerdown', () => document.querySelector('#intro').classList.add('dismissed'), {
-  once: true,
-});
+// The intro gets out of the way once you start playing: at the first click, touch, key or scroll, or after 20 s
+// for a player who only steers with the mouse.
+const intro = document.querySelector('#intro');
+const introEvents = ['pointerdown', 'keydown', 'wheel'];
+function dismissIntro() {
+  intro.classList.add('dismissed');
+  clearTimeout(introTimer);
+  for (const type of introEvents) window.removeEventListener(type, dismissIntro);
+}
+const introTimer = setTimeout(dismissIntro, 20000);
+for (const type of introEvents) window.addEventListener(type, dismissIntro);
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;

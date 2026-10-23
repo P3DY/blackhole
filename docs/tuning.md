@@ -103,7 +103,6 @@ Check these before adding content:
   - nebulae: 2,400 each
   - loose stars: 9,000.
   These counts drive both GPU load and how many captures there are to make.
-- **Onboarding:** `HINTS` is a list of `[seconds, message]` toasts shown at the start of a run.
 - **Controls:** `KEYS` maps actions to `KeyboardEvent.code` values. Every listed code has its default browser action suppressed.
   - `POINTER` sets the mouse dead zone and the distance for full thrust, as shares of the screen height (defaults 0.03 and 0.2).
   - `STICK` sizes the touch joystick in CSS pixels: full thrust at `radius` (56), a dead zone of `dead` (6), and boost beyond `boost` × the radius (1.6).

@@ -94,7 +94,7 @@ Each rival is always in one of four modes. Each mode moves at its own share of y
 |------|-----:|--------------|-------------|
 | **feed** | 0.6 | Circles its chosen galaxy in a tightening orbit, starting at 0.75 of the radius and closing in by 1.5% of the radius per second. It never gets closer than 3× the danger radius of a heavier core. | It has fed for 40 s (`FEED_TIME`), or fewer than 20% of the stars are left. It then switches to **travel**. |
 | **travel** | 0.85 | Flies to the center of a newly chosen galaxy. | It is within 0.8 of that galaxy's radius, then switches to **feed**. |
-| **hunt** | 1.0 | Chases you, aiming 0.4 s ahead of where you're going. Announced with a toast. | You get beyond 16 of its reach radii, 12 s pass, you reach 95% of its mass, or you die. It then rests for 10 s and switches to **travel**. |
+| **hunt** | 1.0 | Chases you, aiming 0.4 s ahead of where you're going. | You get beyond 16 of its reach radii, 12 s pass, you reach 95% of its mass, or you die. It then rests for 10 s and switches to **travel**. |
 | **flee** | 1.0 | Runs straight away from you, weaving so it's harder to run down. | You're no longer within range. It then switches to **travel**. |
 
 Fleeing takes priority. A rival flees when you outweigh it and you're within 8 of *your* reach radii (`FLEE_RANGE`).
@@ -121,7 +121,9 @@ Rivals start with staggered feed timers, so they don't all leave their home gala
 
 ## HUD
 
-- **Top right:** your mass, the feeding meter, stars absorbed, cores swallowed out of 12, and rivals left.
-- **Labels:** the five nearest live black holes. `×2.3` is its mass relative to yours, and **prey** means you outweigh it. Rivals have dashed outlines and a *rival* tag. Off-screen ones are pinned to the screen edge with an arrow pointing toward them.
-- **Toasts** (bottom center): onboarding hints in the first ten seconds, hunts, swallows, and changes in who outweighs whom. Each black hole can trigger at most one weight toast every 15 s.
-- **End card:** peak mass, stars, cores, rivals and time.
+The HUD is deliberately sparse, and nothing pops up during play. Weight relations show in the world itself: a red ring means heavier than you, and no ring means prey.
+
+- **Top right:** your mass and, under it, the feeding meter.
+- **Edge arrows:** for each of the five nearest live black holes that is off screen, an arrow pinned to the screen edge points toward it. Blue means you outweigh it, red means it outweighs you.
+- **Intro panel:** the pitch, what the rings and arrows mean, and the controls. It fades at the first click, touch, key press or scroll, or after 20 s.
+- **End card:** peak mass, stars, cores swallowed out of 12, rivals and time.

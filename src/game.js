@@ -17,7 +17,6 @@ import {
   FLEE_RANGE,
   FULL_FEED,
   HAWKING,
-  HINTS,
   HUNT_GIVE_UP,
   HUNT_PREY,
   HUNT_RANGE,
@@ -52,7 +51,7 @@ import { queryGrid } from './grid.js';
 import { createHole, dangerRadius, planarDistance, spiralIn, warpToward } from './holes.js';
 import { createDisk } from './disk.js';
 import { createJets } from './jets.js';
-import { createHud, formatMass } from './hud.js';
+import { createHud } from './hud.js';
 import { createPointer } from './pointer.js';
 import { createStarfield, disposeObject, mulberry32 } from './utils.js';
 
@@ -135,7 +134,6 @@ export function createGame({ renderer, camera, controls }) {
 
   const stats = { time: 0, stars: 0, cores: 0, rivals: 0, peakMass: START_MASS };
   let won = false;
-  let hintsShown = 0;
 
   // --- Post-processing ----------------------------------------------------------
 
@@ -210,7 +208,6 @@ export function createGame({ renderer, camera, controls }) {
         appetite: 0,
         jetsDue: 0,
         boosting: false,
-        noticedAt: -Infinity,
       });
       hole.velocity.set(0, 0, 0);
       hole.thrust.set(0, 0, 0);
@@ -228,7 +225,6 @@ export function createGame({ renderer, camera, controls }) {
     jets.clear();
     Object.assign(stats, { time: 0, stars: 0, cores: 0, rivals: 0, peakMass: START_MASS });
     won = false;
-    hintsShown = 0;
 
     // Start looking along the galaxy's spiral, so "forward" sweeps through stars rather than into the core.
     const home = plan.galaxies[0];
@@ -243,7 +239,6 @@ export function createGame({ renderer, camera, controls }) {
     cameraScale = REACH * player.shadow;
 
     hud.hideOverlay();
-    hud.clearToasts();
   }
 
   // `victim` starts spiralling into `eater`.
@@ -263,17 +258,11 @@ export function createGame({ renderer, camera, controls }) {
     for (const hole of holes) if (hole.eater === victim && hole.state === 'falling') hole.eater = eater;
     disk.transfer(victim.index, eater.index);
 
-    const gain = formatMass(victim.mass);
     if (eater === player) {
       if (victim.kind === 'core') stats.cores++;
       else stats.rivals++;
-      hud.toast(`Swallowed ${victim.kind === 'core' ? `the <b>${victim.name}</b> core` : `<b>${victim.name}</b>`} · +${gain}`);
     } else if (victim === player) {
       hud.showGameOver(eater, stats);
-    } else if (eater.kind === 'core') {
-      hud.toast(`<b>${victim.name}</b> fell into the <b>${eater.name}</b> core`);
-    } else {
-      hud.toast(`<b>${eater.name}</b> swallowed <b>${victim.name}</b>`);
     }
   }
 
@@ -479,8 +468,6 @@ export function createGame({ renderer, camera, controls }) {
       toPlayer < reach * HUNT_RANGE
     ) {
       setMode(rival, 'hunt');
-      const escape = { touch: 'Drag past the ring', mouse: 'Hold the right mouse button' }[pointer.input] ?? 'Hold Shift';
-      hud.toast(`<b>${rival.name}</b> is hunting you. ${escape} to outrun it.`);
     }
 
     const galaxy = plan.galaxies[ai.galaxy];
@@ -616,17 +603,9 @@ export function createGame({ renderer, camera, controls }) {
       let danger = 0;
       for (const hole of holes) {
         if (hole === player) continue;
-        const alive = hole.state === 'alive';
-        const edible = player.mass > hole.mass;
-        if (alive && edible !== hole.edible && player.state === 'alive' && stats.time - hole.noticedAt > 15) {
-          if (edible && hole.kind === 'core') hud.toast(`You now outweigh the <b>${hole.name}</b> core. Go take it.`);
-          else if (edible) hud.toast(`You now outweigh <b>${hole.name}</b>. Hunt it down.`);
-          else if (hole.kind === 'rival') hud.toast(`<b>${hole.name}</b> has grown heavier than you.`);
-          hole.noticedAt = stats.time;
-        }
-        hole.edible = edible;
+        hole.edible = player.mass > hole.mass;
 
-        const showRing = alive && !edible && player.state === 'alive';
+        const showRing = hole.state === 'alive' && !hole.edible && player.state === 'alive';
         hole.ring.visible = showRing;
         if (!showRing) continue;
         const radius = dangerRadius(hole, player);
@@ -640,10 +619,6 @@ export function createGame({ renderer, camera, controls }) {
       if (!won && player.state === 'alive' && holes.every((hole) => hole === player || hole.state === 'gone')) {
         won = true;
         hud.showVictory(stats);
-      }
-
-      if (player.state === 'alive' && hintsShown < HINTS.length && stats.time >= HINTS[hintsShown][0]) {
-        hud.toast(HINTS[hintsShown++][1]);
       }
 
       // --- Camera: follow, and zoom out as you grow (keeping the user's orbit and zoom) ---
@@ -674,7 +649,8 @@ export function createGame({ renderer, camera, controls }) {
         addLens(hole.position, hole.size, brightness);
       }
 
-      hud.update({ camera, player, holes, stats, danger: player.state === 'alive' ? danger : 0 });
+      if (player.state !== 'alive') danger = 0;
+      hud.update({ camera, player, holes, danger });
     },
 
     render(delta) {

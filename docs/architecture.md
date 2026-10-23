@@ -58,10 +58,10 @@ Because steps 2 and 3 share one random stream, any change that consumes a differ
 6. **Rotate fields.** Each galaxy's angle advances by its spin rate.
 7. **Capture.** Builds the list of *warpers*: live roamers, at most `MAX_WARPS`. For each one, it queries every nearby field's grid and moves stars within reach into the disk.
 8. **Disk update.** Advances every disk particle and absorbs those inside their hole's shadow. It returns the absorbed mass and count per hole index. Rivals' gains are multiplied by `RIVAL_APPETITE`, and the smoothed feed rate drives `appetite` and the jets. Then the player loses `HAWKING` of its mass per second, plus `BOOST_COST` if `steer()` flagged it as boosting.
-9. **Rings, notices, win check, hints.** Updates danger rings and the vignette, posts toasts when weight relations flip, and checks for victory.
+9. **Rings and win check.** Recomputes who outweighs you, updates the danger rings and the vignette strength, and checks for victory.
 10. **Camera.** Follows the player, or whatever swallowed it, and smoothly scales the orbit offset as you grow. This keeps the user's chosen orbit angle and zoom. `minDistance` and `maxDistance` are set each frame to 2.5×–40× your reach. The backdrop starfield is moved to the camera so it reads as infinitely far away.
 11. **Uniforms.** Writes the warpers into `uWarps` and the on-screen black holes into the lens pass's `uLenses`.
-12. **HUD.** Updates the stats, labels and vignette.
+12. **HUD.** Updates the mass readout, the feeding meter, the edge arrows and the vignette.
 
 `render(delta)` then calls `composer.render()`.
 
@@ -135,9 +135,9 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 ## HUD (`hud.js`)
 
 - Plain DOM layered over the canvas, at z-index 5. The intro panel sits at 10 and the end-of-game card at 11.
-- Labels move with `transform` only. A label is measured (`offsetWidth`) only when its text changes, so there's no layout thrashing per frame.
+- It's kept minimal for immersion: a frameless mass readout with a thin feeding meter, the danger vignette, and edge arrows. There are no toasts or other messages during play. Anything a player needs to know up front goes in the intro panel, which `main.js` fades out at the first click, touch, key press or scroll, or after 20 s.
+- Edge arrows are drawn for the five nearest live black holes, and only while they're off screen. They move with `transform` only and never change text, so nothing is measured or laid out per frame.
 - Only the end card accepts pointer events, so you can orbit the camera behind it.
-- Toasts remove themselves on `animationend`, and at most three are shown at once.
 
 ## Pointer input (`pointer.js`)
 
@@ -150,7 +150,6 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
   - `controls.touches` is set to `{ ONE: null, TWO: DOLLY_ROTATE }`, so one finger belongs to the game and two fingers move the camera.
   - A lone finger becomes a joystick (`STICK`). A second finger cancels it, and no new joystick starts until every finger has lifted.
   - The `.bh-stick` element is moved only on pointer events, not every frame.
-- `pointer.input` says whether `'mouse'` or `'touch'` steered last. The hunt toast uses it to name the right boost control.
 
 ## Lifecycle
 
