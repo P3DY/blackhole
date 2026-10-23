@@ -29,7 +29,7 @@ export function createHud(totals, onRestart) {
       <div class="bh-meter"><span></span></div>
     </div>`;
 
-  // Its own element, so it can sit above the intro panel.
+  // Its own element, so it can sit above the hints.
   const overlay = document.createElement('div');
   overlay.className = 'bh-overlay';
   overlay.hidden = true;

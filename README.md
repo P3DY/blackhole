@@ -44,12 +44,14 @@ On a touch screen:
 
 ## How to play
 
+There's no intro screen: the game starts straight away. Each control is shown as a small looping gesture until you've used it, and the first time you near a black hole heavier or lighter than you, time slows almost to a stop while a label explains it.
+
 - Drift into stars to capture them. They spiral into your accretion disk and add to your mass when they cross your shadow.
 - **Red rings** mark black holes that outweigh you, at the distance where their pull beats your thrust. Cross one and you won't get back out.
 - Every galaxy has a **supermassive core**. Once you outweigh it, fly into it to take its mass.
 - Five **rivals** roam between galaxies and eat the same stars. They keep only 30% of what they eat, so you can outgrow them. Rivals hunt you while you're smaller (boosting outruns them) and flee once you're bigger.
 - **Hawking radiation** slowly shrinks you (0.3% of your mass per second), and boosting burns another 1.5% per second, so keep eating.
-- The HUD stays out of the way: your mass and feeding rate in the corner, and arrows at the screen edge toward the nearest black holes when they're out of view (blue: you outweigh it, red: it outweighs you). There are no pop-up messages during play.
+- The HUD stays out of the way: your mass and feeding rate in the corner, and arrows at the screen edge toward the nearest black holes when they're out of view (blue: you outweigh it, red: it outweighs you). Apart from those hints, there are no pop-up messages during play.
 - You win when every core and every rival is gone.
 
 [docs/gameplay.md](docs/gameplay.md) has the full rules and the rival AI.
@@ -57,7 +59,7 @@ On a touch screen:
 ## Project structure
 
 ```
-index.html          page shell, intro panel (title, pitch, controls)
+index.html          page shell
 vite.config.js      relative base path for portable builds
 src/
   main.js           renderer, camera, OrbitControls, render loop
@@ -73,7 +75,8 @@ src/
   pointer.js        mouse and touch steering, and the touch joystick
   audio.js / .css   synthesised music loop, ambience and sound effects, and the settings menu
   hud.js / hud.css  DOM overlay: mass readout, edge arrows, vignette, end-of-game card
-  style.css         page base styles and intro panel
+  hints.js / .css   control lessons as looping gestures, and the slowed moments that explain weight
+  style.css         page base styles
   utils.js          seeded random, backdrop starfield, GPU disposal helper
 docs/
   gameplay.md       rules, scaling, rival AI
@@ -91,7 +94,7 @@ docs/
 
 ## Browser support
 
-The game needs WebGL 2, which every current desktop and mobile browser has. It plays with keyboard, mouse or touch. The intro panel fades out at the first click, touch, key press or scroll, or after 20 seconds. Sound starts at that first click, touch or key press too, because browsers don't allow a page to play audio before one. All of it is synthesised with the Web Audio API, so there are no audio files to load. Performance depends mostly on fill rate: with additive particles, bloom and lensing at full resolution, a low-end GPU at a high pixel ratio is the usual bottleneck. The renderer caps the pixel ratio at 2.
+The game needs WebGL 2, which every current desktop and mobile browser has. It plays with keyboard, mouse or touch, and the hints show the gestures for whichever you have. Sound starts at the first click, touch or key press, because browsers don't allow a page to play audio before one. All of it is synthesised with the Web Audio API, so there are no audio files to load. Performance depends mostly on fill rate: with additive particles, bloom and lensing at full resolution, a low-end GPU at a high pixel ratio is the usual bottleneck. The renderer caps the pixel ratio at 2.
 
 ## Origin
 

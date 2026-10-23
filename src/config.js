@@ -122,6 +122,19 @@ export const UNIVERSE_SEED = 1987; // the same universe on every visit
 // 'drone', 'rain', 'whoosh' or 'gulps' (see FEEDS in audio.js).
 export const AUDIO = { master: 0.8, music: 0.5, ambience: 0.6, effects: 0.8, feeding: 'tuned' };
 
+// --- Hints ------------------------------------------------------------------------
+//
+// There's no intro: hints.js teaches the game as you play. The controls come one at a time as looping
+// gestures (drift, then boost, then look around), each `wait` seconds after the one before it is done, until
+// you've drifted for `drift` seconds at full thrust, boosted for `boost` seconds and turned the camera through
+// `look` radians. Whatever you've already done counts, so a lesson you don't need never shows.
+export const LESSONS = { wait: 1.5, drift: 1.2, boost: 0.8, look: 0.8 };
+// The first time you near a black hole heavier than you (within `heavier` of its danger radii while closing
+// in, or half that regardless) and the first time you near a lighter one (within `lighter` of your reach
+// radii, on screen), time slows to `scale` while a label explains it. In real seconds: `ease` to slow down,
+// `hold`, then `recover` back to full speed.
+export const SLOW_MOTION = { scale: 0.04, ease: 0.3, hold: 3.5, recover: 0.8, heavier: 6, lighter: 6 };
+
 // Mouse: steers toward the point under the cursor, with no push within `dead` of the black hole and full
 // thrust from `full`, both as shares of the screen height.
 export const POINTER = { dead: 0.03, full: 0.2 };

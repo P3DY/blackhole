@@ -45,6 +45,8 @@ Every live black hole heavier than you gets a **red ring**. Its radius is the la
 
 Rings fade out with distance. The screen edges glow red as you get close to one.
 
+The first time you near a heavier black hole, time slows almost to a stop while its ring pulses and a label explains it. The first time you near a lighter one, the same happens with a blue ring around it and a ring showing your reach (see [Hints](#hints)).
+
 ## Galaxy tiers: why the game scales
 
 Galaxies come in **tiers**. Each tier is `TIER_GROWTH` (1.6×) wider than the one before:
@@ -119,13 +121,23 @@ Here `left` is the share of stars remaining. The highest score wins.
 
 Rivals start with staggered feed timers, so they don't all leave their home galaxies at once.
 
+## Hints
+
+There's no introduction: the game starts straight away and teaches itself as you play.
+
+- **Controls** are shown one at a time as looping gestures that fade in and out until you've done them: drift (the mouse, W A S D, or a one-finger joystick), then boost (Shift, the right mouse button, or dragging past the joystick ring), then look around (left-drag, or two fingers). Each waits 1.5 s after the last one is done. Anything you've already done counts, so you only see what you haven't found yet.
+- **Weight** is explained the first time it matters. Nearing a black hole that outweighs you, or one you outweigh, slows time to 4% for about 4.5 s while a label over it says what it means: don't cross a heavier one's red ring, and bring a lighter one inside your reach to swallow it.
+- What you've learned stays learned when you restart with **R**. A reload starts over.
+
+The thresholds are in `LESSONS` and `SLOW_MOTION` (see [tuning.md](tuning.md#hints)).
+
 ## HUD
 
-The HUD is deliberately sparse, and nothing pops up during play. Weight relations show in the world itself: a red ring means heavier than you, and no ring means prey.
+The HUD is deliberately sparse. Apart from the hints, nothing pops up during play. Weight relations show in the world itself: a red ring means heavier than you, and no ring means prey.
 
 - **Top right:** your mass and, under it, the feeding meter.
 - **Edge arrows:** for each of the five nearest live black holes that is off screen, an arrow pinned to the screen edge points toward it. Blue means you outweigh it, red means it outweighs you.
-- **Intro panel:** the pitch, what the rings and arrows mean, and the controls. It fades at the first click, touch, key press or scroll, or after 20 s.
+- **Hints:** control gestures low in the middle of the screen, and labels over a black hole while time is slowed (see [Hints](#hints)).
 - **End card:** peak mass, stars, cores swallowed out of 12, rivals and time.
 - **Settings:** a faint gear in the top-left corner opens switches for Sound, Music and Effects, and a choice of feeding sound. **M** toggles Sound.
 

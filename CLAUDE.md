@@ -35,6 +35,7 @@ These docs quote numbers derived from `config.js` (tier tables, rival masses, st
 - Physics is 2D on the **x/z plane**. Distances and velocities ignore y, which only adds visual thickness.
 - Most quantities are in **shadow radii** (`S = SHADOW_SIZE · ∛mass`), so the game feels the same at every size.
 - `reset()` (also bound to **R**) restores state without rebuilding geometry.
+- **Game time can run slow.** `hints.js` returns a time scale (4% during a slowed moment), and `update()` multiplies the host's delta by it before simulating. Anything that's part of the game world must use that scaled `delta`. The hints and the audio take the real frame delta, and OrbitControls runs in real time.
 
 ## Invariants that span files
 

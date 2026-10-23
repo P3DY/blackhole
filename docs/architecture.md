@@ -16,6 +16,7 @@ main.js ──► game.js ──┬─► config.js        constants (imported b
                       ├─► pointer.js       createPointer (mouse and touch steering)
                       ├─► audio.js ──► audio.css   createAudio (synthesised music, ambience, effects)
                       ├─► hud.js ──► hud.css
+                      ├─► hints.js ──► hints.css   createHints (control lessons, slowed moments)
                       └─► utils.js         mulberry32, createStarfield, disposeObject
 ```
 
@@ -42,14 +43,14 @@ The order of the `holes` array matters: `[player, ...rivals, ...cores]`. Each ho
 1. `mulberry32(UNIVERSE_SEED)` gives a seeded random stream.
 2. `planUniverse(random)` lays out the main path, side trips, nebulae, start point and rival spawns as plain objects.
 3. `buildFields(plan, random, starMaterial)` builds geometry for every field **from the same random stream**. It also builds each field's spatial grid once.
-4. Black holes, rings, the disk pool, the jet pool, the post-processing chain and the HUD are created.
+4. Black holes, rings, the disk pool, the jet pool, the post-processing chain, the HUD and the hints are created.
 5. `reset()` puts everything at its starting state. **R** calls the same function, so a restart rebuilds nothing. It only refills the alive flags, restores the holes and clears the pools.
 
 Because steps 2 and 3 share one random stream, any change that consumes a different number of random values in `planUniverse` changes all of the galaxy geometry after it. Rival timers and jets use `Math.random()`, so runs differ slightly even though the universe is fixed.
 
 ## The frame
 
-`update(elapsed, delta)` runs these steps in order:
+`update(elapsed, frameDelta)` first scales the host's delta: `delta = frameDelta · timeScale`. The time scale is 1 except while a hint slows the game down (see [Hints](#hints-hintsjs)). Steps 1–11 run on that scaled game time; the hints and the audio get the real `frameDelta`. Then it runs these steps in order:
 
 1. **Sizes.** Each shadow eases toward `shadowOf(mass)`. A falling hole's drawn size shrinks with the square root of how far it has fallen.
 2. **Steer.** Turns input into thrust for the player. Held keys win, and they push relative to the camera's flattened forward direction. Otherwise `pointer.steer()` supplies a push of length 0–1. With a mouse, it aims at the point on the galactic plane under the cursor, which it finds by raycasting. With touch, the joystick offset is mapped onto the same camera axes as the keys. See [Pointer input](#pointer-input-pointerjs).
@@ -59,10 +60,10 @@ Because steps 2 and 3 share one random stream, any change that consumes a differ
 6. **Rotate fields.** Each galaxy's angle advances by its spin rate.
 7. **Capture.** Builds the list of *warpers*: live roamers, at most `MAX_WARPS`. For each one, it queries every nearby field's grid and moves stars within reach into the disk.
 8. **Disk update.** Advances every disk particle and absorbs those inside their hole's shadow. It returns the absorbed mass and count per hole index. Rivals' gains are multiplied by `RIVAL_APPETITE`, and the smoothed feed rate drives `appetite` and the jets. Then the player loses `HAWKING` of its mass per second, plus `BOOST_COST` if `steer()` flagged it as boosting.
-9. **Rings and win check.** Recomputes who outweighs you, updates the danger rings and the vignette strength, and checks for victory.
+9. **Rings and win check.** Recomputes who outweighs you, updates the danger rings and the vignette strength, and checks for victory. While a hint is explaining a black hole (`hints.focus`, from last frame), its ring pulses: red as usual if it outweighs you, or blue and close around it if it doesn't, with a pale ring at your reach as well.
 10. **Camera.** Follows the player, or whatever swallowed it, and smoothly scales the orbit offset as you grow. This keeps the user's chosen orbit angle and zoom. `minDistance` and `maxDistance` are set each frame to 2.5×–40× your reach. The backdrop starfield is moved to the camera so it reads as infinitely far away.
-11. **Uniforms.** Writes the warpers into `uWarps` and the on-screen black holes into the lens pass's `uLenses`.
-12. **HUD and audio.** Updates the mass readout, the feeding meter, the edge arrows and the vignette, then hands the danger, your feeding rate, speed and mass, and the stars you absorbed this frame to the audio layers. See [Audio](#audio-audiojs).
+11. **Uniforms.** Writes the warpers into `uWarps` and the on-screen black holes into the lens pass's `uLenses`. `uTime` is `elapsed` minus the time slow motion has cost, so the stars twinkle on game time.
+12. **HUD, hints and audio.** Updates the mass readout, the feeding meter, the edge arrows and the vignette. `hints.update()` advances the lessons and any slowed moment and returns the time scale for the next frame. Then the audio layers get the danger, your feeding rate, speed and mass, the stars you absorbed this frame, and the time scale. See [Audio](#audio-audiojs).
 
 `render(delta)` then calls `composer.render()`.
 
@@ -127,7 +128,7 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 | Disk particles (max) | 32,768 |
 | Jet particles (max) | 4,096 |
 | Backdrop stars | 3,000 |
-| Draw calls for the scene | 21 (18 fields, disk, jets, backdrop) + 1 per visible danger ring |
+| Draw calls for the scene | 21 (18 fields, disk, jets, backdrop) + 1 per visible ring (danger rings, and the reach ring during a hint) |
 | Full-screen passes | lens, bloom (several mip levels), output |
 
 - **CPU cost** is dominated by `disk.update()`, which is O(live disk particles), and by capture queries, which only touch cells near each roamer. Gravity is O(roamers × holes), which is 6 × 18.
@@ -135,10 +136,32 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 
 ## HUD (`hud.js`)
 
-- Plain DOM layered over the canvas, at z-index 5. The intro panel sits at 10 and the end-of-game card at 11.
-- It's kept minimal for immersion: a frameless mass readout with a thin feeding meter, the danger vignette, and edge arrows. There are no toasts or other messages during play. Anything a player needs to know up front goes in the intro panel, which `main.js` fades out at the first click, touch, key press or scroll, or after 20 s.
+- Plain DOM layered over the canvas, at z-index 5. The hints sit at 6 (their letterbox bars at 4, under the HUD), the end-of-game card at 11 and the settings gear at 12.
+- It's kept minimal for immersion: a frameless mass readout with a thin feeding meter, the danger vignette, and edge arrows. There's no intro panel and there are no toasts. The only other things on screen during play are the hints.
 - Edge arrows are drawn for the five nearest live black holes, and only while they're off screen. They move with `transform` only and never change text, so nothing is measured or laid out per frame.
 - Only the end card accepts pointer events, so you can orbit the camera behind it. (The settings gear in the top-left corner belongs to `audio.js`.)
+
+## Hints (`hints.js`)
+
+The game starts with no introduction. `createHints({ controls })` teaches it as you play, keeping its own DOM and progress the same way the HUD does. Progress survives a restart (**R**) but not a reload.
+
+- **Control lessons.** Drift, then boost, then look around, each a gesture that loops on a 4.4 s period: fade in, play, fade out, pause. Each comes `LESSONS.wait` seconds after the one before it is done, and shows until you've done enough of it (`LESSONS` in `config.js`). Use counts from the start whether or not its lesson is showing, so a lesson you've already done is skipped.
+  - Drift counts seconds at full thrust (`|thrust| / (THRUST · S · boost)`), boost counts seconds of `player.boosting`, and look counts the radians the camera turns, read from `controls.getAzimuthalAngle()` and `getPolarAngle()`. Only you turn the camera: the game's follow moves it but keeps its angles.
+  - Each lesson has a mouse-and-keyboard version and a touch version. `hints.css` picks one with a `(hover: none) and (pointer: coarse)` media query. With a mouse, drift draws a ghost cursor gliding away from the black hole at the screen's centre (the camera always targets you), over a W A S D cluster lighting in turn. With touch, a ghost fingertip opens the joystick ring and drags, past the ring for boost and with two fingers for look.
+  - The gestures are pure CSS animations sharing one period, so they stay in step and cost nothing per frame. When a lesson is done while showing, it flares and fades from wherever its pulse was (`--from`). Its class is dropped on `animationend`, which stops the gestures looping unseen.
+  - Lessons hide while a moment is playing or you're not alive.
+- **Slowed moments.** The first time you near a black hole heavier than you, and the first time you near a lighter one, time slows to `SLOW_MOTION.scale` (4%) while a label explains it:
+
+  | Moment | Starts when | Label | In the world |
+  |--------|-------------|-------|--------------|
+  | heavier | Within `SLOW_MOTION.heavier` (6) of its danger radii while closing in and on screen, or half that regardless | "Heavier than you · Don't cross its red ring" | Its red ring pulses |
+  | lighter | Within `SLOW_MOTION.lighter` (6) of your reach radii, and on screen | "Lighter than you · Bring it inside your reach to swallow it" | A blue ring circles it at 2.5 shadow radii, and a pale ring with a "your reach" tag marks your reach |
+
+  - The time scale eases down over `ease` (0.3 s of real time), holds for `hold` (3.5 s), then recovers over `recover` (0.8 s). It's interpolated as `scale^depth` (depth 0 to 1), so the change feels even. You can still steer and orbit the camera meanwhile; steering just acts in slow motion.
+  - "On screen" means the hole's centre is inside 90% of the view, so on a narrow screen a hole at the edge waits until you turn toward it.
+  - The label is pinned each frame (by `transform`) to the top of the ring on screen, and clamped to the viewport. The "your reach" tag sits under your reach ring. Letterbox bars slide in while time is slowed.
+  - A moment ends early if you stop being alive or restart. If the black hole it's about is swallowed, it skips to the recovery.
+  - The audio follows the time scale: while you're alive, the music's `playbackRate` drags toward half speed and the horizon filter closes toward 900 Hz. Once you're falling in, `fall()` and `swallowed()` take over both, as before.
 
 ## Pointer input (`pointer.js`)
 
@@ -203,4 +226,4 @@ Every sound is synthesised with the Web Audio API. There are no audio files, and
 
 ## Lifecycle
 
-`dispose()` removes the window listeners (keyboard, blur, resize), the pointer listeners, the audio's unlock and visibility listeners, and the HUD, joystick and settings menu elements. It closes the `AudioContext`, and disposes the post-processing passes, the composer, and every geometry, material and texture in the scene. It leaves the renderer, camera and controls alone, because the host owns them.
+`dispose()` removes the window listeners (keyboard, blur, resize), the pointer listeners, the audio's unlock and visibility listeners, and the HUD, hints, joystick and settings menu elements. It closes the `AudioContext`, and disposes the post-processing passes, the composer, and every geometry, material and texture in the scene. It leaves the renderer, camera and controls alone, because the host owns them.

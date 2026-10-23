@@ -1,4 +1,4 @@
-/* Settings, top left: a gear as faint as the rest of the HUD until you reach for it. Above the intro (10). */
+/* Settings, top left: a gear as faint as the rest of the HUD until you reach for it. Above everything else. */
 .bh-settings {
   position: fixed;
   top: 12px;

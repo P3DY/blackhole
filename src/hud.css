@@ -1,4 +1,4 @@
-/* HUD laid over the canvas, below the intro panel (except the end-of-game card). */
+/* HUD laid over the canvas, under the hints (except the end-of-game card, which goes over them). */
 
 .bh,
 .bh-overlay {
@@ -78,7 +78,7 @@
   --tint: #5ee7ff;
 }
 
-/* Above the intro panel, but only the card takes clicks, so you can still orbit the camera around it. */
+/* Above the hints, but only the card takes clicks, so you can still orbit the camera around it. */
 .bh-overlay {
   position: fixed;
   inset: 0;

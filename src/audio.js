@@ -22,7 +22,8 @@ const MUSIC_RATE = 32000; // it's dark music, so 16 kHz of bandwidth is plenty
 const MUSIC_SEED = 40; // its own stream: the universe's must not be touched
 const PENTATONIC = [50, 53, 55, 57, 60, 62]; // D minor pentatonic, D3–D4: a hum for each star you absorb
 const REWARD = [50, 57, 62, 64, 69, 74]; // an open Dsus2, hummed upward when you swallow a black hole
-const OPEN = 20000; // the horizon filter's cutoff while you're alive
+const OPEN = 20000; // the horizon filter's cutoff while you're alive…
+const SLOWED = 900; // …and while a hint has slowed time right down
 
 // What feeding sounds like, under the swirl: [key, label, description]. It's the player's choice: all of them
 // are built, and the Feeding section of the settings menu picks the one you hear.
@@ -470,8 +471,9 @@ export function createAudio({ camera }) {
       return muted;
     },
 
-    // Every frame. `danger` is the HUD's (0 when you're safe), `stars` how many stars you absorbed this frame.
-    update(delta, { player, danger, stars }) {
+    // Every frame, with the frame's real delta. `danger` is the HUD's (0 when you're safe), `stars` how many
+    // stars you absorbed this frame, and `timeScale` how fast the game runs (below 1 while a hint slows it).
+    update(delta, { player, danger, stars, timeScale = 1 }) {
       if (!running()) {
         starCredit = 0;
         return;
@@ -518,6 +520,14 @@ export function createAudio({ camera }) {
       glide(tension.rate.frequency, 1.5 + 5 * threat, 0.3);
       glide(tension.gain.gain, 0.45 * threat * threat, 0.3);
       glide(musicBus.gain, off.music ? 0 : AUDIO.music * (1 - 0.4 * threat), 0.5); // the music backs off when it's dangerous
+
+      // Slow motion: the music drags down to half speed and the world goes muffled. Once you're falling in,
+      // fall() and swallowed() have these instead.
+      if (alive) {
+        const stall = 1 - timeScale;
+        if (music) glide(music.playbackRate, 1 - 0.5 * stall, 0.2);
+        glide(horizon.frequency, OPEN * (SLOWED / OPEN) ** stall, 0.2);
+      }
     },
 
     // A black hole starts falling into you. `share` is its mass as a share of yours.

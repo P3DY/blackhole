@@ -91,6 +91,17 @@ Bloom is set where `UnrealBloomPass` is created in `game.js`: strength 0.75, rad
 - A limiter sits after the master gain, so pushing levels up squashes the loudest moments (being swallowed, a big meal) rather than clipping them.
 - The score itself (chords, loop length, melody density), the feeding sounds' levels and how each layer follows the game are set in `audio.js`, next to the code that uses them.
 
+## Hints
+
+| Constant | Default | Effect |
+|----------|--------:|--------|
+| `LESSONS` | wait 1.5 · drift 1.2 · boost 0.8 · look 0.8 | `wait` is the seconds between one control lesson being done and the next appearing (and before the first). The rest say when each is done: seconds drifting at full thrust, seconds boosting, and radians of camera turn. |
+| `SLOW_MOTION` | scale 0.04 · ease 0.3 · hold 3.5 · recover 0.8 · heavier 6 · lighter 6 | `scale` is the game speed during a slowed moment. `ease`, `hold` and `recover` are real seconds. `heavier` is how many danger radii from a heavier black hole the moment starts (while you're closing in; at half that it starts regardless), and `lighter` is how many of your reach radii from a lighter one. |
+
+- **Leave room to react.** The heavier moment has to start far enough out that you can still turn away, because time slows but doesn't stop. Easing in and recovering cost about `0.5 · (ease + recover)` ≈ 0.55 s of game time, and the hold another `scale · hold` ≈ 0.14 s. Boosting straight in at 27 S/s, that's about 19 S. The starting galaxy's core has a danger radius of about 3 S, so its moment starts about 18 S out. Reverse as soon as the label appears and you still stop outside the ring. Lower `heavier`, or lengthen `ease` or `recover`, and you won't.
+- Raising `scale` makes the moments less of a freeze. Even at 0.04, a 3.5 s hold is 0.14 s of game time.
+- The labels' wording, the 2.5-shadow-radius ring around a lighter hole and the order of the control lessons are set in `hints.js`. The gestures' timing (one 4.4 s period) is in `hints.css`.
+
 ## Capacity limits
 
 Check these before adding content:
@@ -113,6 +124,6 @@ Check these before adding content:
   - nebulae: 2,400 each
   - loose stars: 9,000.
   These counts drive both GPU load and how many captures there are to make.
-- **Controls:** `KEYS` maps actions to `KeyboardEvent.code` values. Every listed code has its default browser action suppressed.
+- **Controls:** `KEYS` maps actions to `KeyboardEvent.code` values. If you change the keys, update the keycaps drawn by the control lessons in `hints.js`. Every listed code has its default browser action suppressed.
   - `POINTER` sets the mouse dead zone and the distance for full thrust, as shares of the screen height (defaults 0.03 and 0.2).
   - `STICK` sizes the touch joystick in CSS pixels: full thrust at `radius` (56), a dead zone of `dead` (6), and boost beyond `boost` × the radius (1.6).

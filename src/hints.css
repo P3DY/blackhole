@@ -1,0 +1,643 @@
+/* Hints, from hints.js: a looping gesture for each control until you've used it, and labels while time is slowed.
+   Above the HUD (5), below the end-of-game card (11). Nothing here takes clicks. */
+
+.bh-hints {
+  --period: 4.4s; /* one fade in, gesture and fade out; every animation in a lesson shares it, so they stay in step */
+  --glow: rgba(255, 210, 160, 0.9);
+
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  color: #e8ecf4;
+}
+
+/* --- Lessons ------------------------------------------------------------------- */
+
+.bh-lesson {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+.bh-lesson.active {
+  animation: bh-pulse var(--period) ease-in-out infinite;
+}
+
+/* You did it: a last flare from wherever the pulse was, then gone. */
+.bh-lesson.done {
+  animation: bh-done 0.8s ease-out forwards;
+}
+
+@keyframes bh-pulse {
+  0% {
+    opacity: 0;
+  }
+  10%,
+  68% {
+    opacity: 1;
+  }
+  80%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes bh-done {
+  from {
+    opacity: var(--from, 1);
+  }
+  25% {
+    opacity: 1;
+    filter: brightness(1.8);
+  }
+  to {
+    opacity: 0;
+    filter: brightness(1);
+  }
+}
+
+.bh-desk,
+.bh-touch {
+  position: absolute;
+  inset: 0;
+}
+
+/* Touch-only devices get the touch gestures. */
+.bh-touch {
+  display: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .bh-desk {
+    display: none;
+  }
+
+  .bh-touch {
+    display: block;
+  }
+}
+
+/* Glyphs and a one-word caption, low in the middle of the screen. */
+.bh-dock {
+  position: absolute;
+  left: 50%;
+  bottom: 13vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  translate: -50% 0;
+}
+
+.bh-glyphs {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.bh-caption {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.24em;
+  text-align: center;
+  text-transform: uppercase;
+  color: #d8deea;
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.9);
+}
+
+.bh-caption small {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: none;
+  color: #7a8296;
+}
+
+.bh-or {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: #7a8296;
+}
+
+.bh-hints kbd {
+  display: grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  font: 600 11px/1 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: #9aa3b5;
+  background: rgba(12, 14, 22, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+}
+
+/* W over A S D. */
+.bh-keys {
+  display: grid;
+  grid-template-columns: repeat(3, 24px);
+  gap: 3px;
+}
+
+.bh-keys kbd:first-child {
+  grid-column: 2;
+}
+
+.bh-keys kbd:nth-child(2) {
+  grid-column: 1; /* starts the second row */
+}
+
+.bh-hints kbd.bh-shift {
+  padding: 0 10px;
+}
+
+/* A mouse outline, with the button that matters lit. */
+.bh-mouse {
+  width: 22px;
+  height: 33px;
+  overflow: visible;
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-width: 1.5;
+}
+
+.bh-mouse .bh-button {
+  stroke: none;
+  fill: rgba(255, 255, 255, 0.08);
+}
+
+/* Drift with a mouse: a ghost cursor glides away from the black hole in the middle of the screen, and a dashed
+   line shows where you'd go. */
+.bh-aim {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+}
+
+.bh-trail {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 139px; /* to the cursor's furthest point, (120, -70) */
+  border-top: 2px dashed rgba(255, 255, 255, 0.7);
+  filter: drop-shadow(0 0 3px rgba(255, 220, 180, 0.6));
+  transform-origin: 0 0;
+  rotate: -30.26deg;
+  clip-path: inset(-4px 100% -4px 0);
+}
+
+.bh-cursor {
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  width: 15px;
+  height: 22px;
+  fill: rgba(255, 255, 255, 0.9);
+  stroke: rgba(10, 12, 20, 0.8);
+  stroke-width: 1;
+  filter: drop-shadow(0 0 5px rgba(255, 220, 180, 0.8));
+}
+
+/* Touch: a ghost fingertip, and the joystick ring it would open. */
+.bh-thumb,
+.bh-pair {
+  position: absolute;
+  left: 50%;
+  bottom: 27vh;
+}
+
+.bh-finger {
+  position: absolute;
+  top: -13px;
+  left: -13px;
+  width: 26px;
+  height: 26px;
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 50%;
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.45);
+}
+
+.bh-ring {
+  position: absolute;
+  top: -56px; /* STICK.radius */
+  left: -56px;
+  width: 112px;
+  height: 112px;
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+}
+
+.bh-pair .bh-finger:first-child {
+  left: -37px;
+}
+
+.bh-pair .bh-finger:last-child {
+  left: 11px;
+}
+
+/* Look around with a mouse: hold the left button and swing. */
+.bh-look {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.bh-swing {
+  width: 60px;
+  height: 18px;
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.45);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* --- The gestures, all on the lesson's period. Visible from 10% to 68% of it. --- */
+
+.bh-lesson:is(.active, .done) :is(.bh-cursor, .bh-trail, .bh-keys kbd, .bh-shift, .bh-button, .bh-sway, .bh-finger, .bh-ring) {
+  animation-duration: var(--period);
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
+  animation-fill-mode: backwards;
+}
+
+.bh-lesson:is(.active, .done) .bh-cursor {
+  animation-name: bh-cursor;
+}
+
+.bh-lesson:is(.active, .done) .bh-trail {
+  animation-name: bh-trail;
+}
+
+@keyframes bh-cursor {
+  0%,
+  16% {
+    transform: translate(0, 0);
+  }
+  50%,
+  100% {
+    transform: translate(120px, -70px);
+  }
+}
+
+@keyframes bh-trail {
+  0%,
+  16% {
+    clip-path: inset(-4px 100% -4px 0);
+  }
+  50%,
+  100% {
+    clip-path: inset(-4px 0);
+  }
+}
+
+/* W, A, S, D light in turn. */
+.bh-lesson:is(.active, .done) .bh-keys kbd {
+  animation-name: bh-tap;
+}
+
+.bh-keys kbd:nth-child(2) {
+  animation-delay: 0.45s;
+}
+
+.bh-keys kbd:nth-child(3) {
+  animation-delay: 0.9s;
+}
+
+.bh-keys kbd:nth-child(4) {
+  animation-delay: 1.35s;
+}
+
+@keyframes bh-tap {
+  0%,
+  14%,
+  32%,
+  100% {
+    color: #9aa3b5;
+    border-color: rgba(255, 255, 255, 0.25);
+    box-shadow: none;
+    translate: 0 0;
+  }
+  18%,
+  28% {
+    color: #fff;
+    border-color: var(--glow);
+    box-shadow: 0 0 10px rgba(255, 190, 130, 0.55);
+    translate: 0 1px;
+  }
+}
+
+/* Shift and the right button are held down. */
+.bh-lesson:is(.active, .done) .bh-shift {
+  animation-name: bh-hold-key;
+}
+
+.bh-lesson:is(.active, .done) .bh-button {
+  animation-name: bh-hold-button;
+}
+
+@keyframes bh-hold-key {
+  0%,
+  18%,
+  64%,
+  100% {
+    color: #9aa3b5;
+    border-color: rgba(255, 255, 255, 0.25);
+    box-shadow: none;
+    translate: 0 0;
+  }
+  22%,
+  60% {
+    color: #fff;
+    border-color: var(--glow);
+    box-shadow: 0 0 12px rgba(255, 190, 130, 0.6);
+    translate: 0 1px;
+  }
+}
+
+@keyframes bh-hold-button {
+  0%,
+  18%,
+  64%,
+  100% {
+    fill: rgba(255, 255, 255, 0.08);
+  }
+  22%,
+  60% {
+    fill: var(--glow);
+  }
+}
+
+/* The left button is held through the whole swing, so it reads as a drag. */
+.bh-lesson:is(.active, .done) .bh-sway {
+  animation-name: bh-sway;
+}
+
+@keyframes bh-sway {
+  0%,
+  22% {
+    transform: translateX(0);
+  }
+  36% {
+    transform: translateX(-18px);
+  }
+  50% {
+    transform: translateX(18px);
+  }
+  62%,
+  100% {
+    transform: translateX(0);
+  }
+}
+
+/* Touch drift: press, drag up a little, let go. */
+.bh-lesson:is(.active, .done) .bh-finger {
+  animation-name: bh-finger-drift;
+}
+
+.bh-lesson:is(.active, .done) .bh-ring {
+  animation-name: bh-ring;
+}
+
+@keyframes bh-finger-drift {
+  0%,
+  10% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+  16%,
+  24% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  44%,
+  60% {
+    opacity: 1;
+    transform: translateY(-44px);
+  }
+  66%,
+  100% {
+    opacity: 0;
+    transform: translateY(-44px);
+  }
+}
+
+@keyframes bh-ring {
+  0%,
+  14% {
+    opacity: 0;
+  }
+  18%,
+  60% {
+    opacity: 1;
+  }
+  66%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Touch boost: the same, but out past the ring, which lights up. */
+.bh-lesson:is(.active, .done)[data-lesson='boost'] .bh-finger {
+  animation-name: bh-finger-boost;
+}
+
+.bh-lesson:is(.active, .done)[data-lesson='boost'] .bh-ring {
+  animation-name: bh-ring-boost;
+}
+
+@keyframes bh-finger-boost {
+  0%,
+  10% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+  16%,
+  22% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  48%,
+  60% {
+    opacity: 1;
+    transform: translateY(-100px);
+  }
+  66%,
+  100% {
+    opacity: 0;
+    transform: translateY(-100px);
+  }
+}
+
+@keyframes bh-ring-boost {
+  0%,
+  14% {
+    opacity: 0;
+  }
+  18%,
+  40% {
+    opacity: 1;
+    border-color: rgba(255, 255, 255, 0.3);
+    box-shadow: none;
+  }
+  46%,
+  60% {
+    opacity: 1;
+    border-color: rgba(168, 196, 255, 0.9);
+    box-shadow: 0 0 18px rgba(140, 170, 255, 0.55);
+  }
+  66%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Touch look: two fingers down, dragged side to side together. */
+.bh-lesson:is(.active, .done)[data-lesson='look'] .bh-finger {
+  animation-name: bh-pair;
+}
+
+@keyframes bh-pair {
+  0%,
+  10% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+  16%,
+  22% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  36% {
+    transform: translateX(-36px);
+  }
+  50% {
+    transform: translateX(36px);
+  }
+  60% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  66%,
+  100% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+}
+
+/* --- Slowed moments -------------------------------------------------------------- */
+
+/* A label over the black hole being explained, red if it outweighs you and blue if not (like the edge arrows),
+   with a tick down to its ring. hints.js sets `transform` to the ring's top on screen. */
+.bh-callout {
+  --tint: #ff6b6b;
+
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: 280px;
+  padding: 10px 18px 0;
+  text-align: center;
+  background: radial-gradient(closest-side, rgba(2, 2, 8, 0.6), transparent) no-repeat 50% 0 / 100% 70px; /* behind the text, so it reads over a bright galaxy */
+  opacity: 0;
+  translate: -50% -100%;
+  transition: opacity 0.4s;
+  will-change: transform;
+}
+
+.bh-callout.show {
+  opacity: 1;
+}
+
+.bh-callout.prey {
+  --tint: #5ee7ff;
+}
+
+.bh-callout b {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--tint);
+  text-shadow:
+    0 0 12px var(--tint),
+    0 0 3px #000;
+}
+
+.bh-callout span {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #d8deea;
+  text-shadow: 0 0 6px #000;
+}
+
+.bh-callout::after {
+  content: '';
+  display: block;
+  width: 1px;
+  height: 22px;
+  margin: 8px auto 0;
+  background: linear-gradient(var(--tint), transparent);
+}
+
+/* Under your reach ring while a lighter black hole is explained. */
+.bh-tag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #cfe0ff;
+  text-shadow: 0 0 6px #000;
+  opacity: 0;
+  translate: -50% 8px;
+  transition: opacity 0.4s;
+  will-change: transform;
+}
+
+.bh-tag.show {
+  opacity: 0.9;
+}
+
+/* Cinematic bars while time is slowed. Under the HUD (z-index 4), so your mass still shows. */
+.bh-letterbox {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.bh-letterbox::before,
+.bh-letterbox::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 10vh;
+  transform: scaleY(0);
+  transition: transform 0.5s ease;
+}
+
+.bh-letterbox::before {
+  top: 0;
+  transform-origin: top;
+  background: linear-gradient(rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.6) 70%, transparent);
+}
+
+.bh-letterbox::after {
+  bottom: 0;
+  transform-origin: bottom;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.6) 70%, transparent);
+}
+
+.bh-letterbox.on::before,
+.bh-letterbox.on::after {
+  transform: scaleY(1);
+}

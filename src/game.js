@@ -52,6 +52,7 @@ import { createHole, dangerRadius, planarDistance, spiralIn, warpToward } from '
 import { createDisk } from './disk.js';
 import { createJets } from './jets.js';
 import { createHud } from './hud.js';
+import { createHints } from './hints.js';
 import { createPointer } from './pointer.js';
 import { createAudio } from './audio.js';
 import { createStarfield, disposeObject, mulberry32 } from './utils.js';
@@ -117,24 +118,27 @@ export function createGame({ renderer, camera, controls }) {
   const holes = [...roamers, ...cores];
   holes.forEach((hole, index) => (hole.index = index));
 
-  // Rings mark how close you can get to a black hole that outweighs you.
+  // Rings mark how close you can get to a black hole that outweighs you. While a hint explains a lighter one,
+  // its ring turns blue and circles it instead, and another ring shows your reach.
   const ringGeometry = new THREE.RingGeometry(0.97, 1, 128).rotateX(-Math.PI / 2);
+  const ringMaterial = (color) =>
+    new THREE.MeshBasicMaterial({ color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+  const DANGER_TINT = new THREE.Color('#ff4040');
+  const PREY_TINT = new THREE.Color('#5ee7ff');
   for (const hole of holes) {
     if (hole === player) continue;
-    hole.ring = new THREE.Mesh(
-      ringGeometry,
-      new THREE.MeshBasicMaterial({
-        color: '#ff4040',
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      }),
-    );
+    hole.ring = new THREE.Mesh(ringGeometry, ringMaterial(DANGER_TINT));
     scene.add(hole.ring);
   }
+  const reachRing = new THREE.Mesh(ringGeometry, ringMaterial('#cfe0ff'));
+  reachRing.visible = false;
+  scene.add(reachRing);
 
   const stats = { time: 0, stars: 0, cores: 0, rivals: 0, peakMass: START_MASS };
   let won = false;
+  // Hints can slow the game right down. Everything but the hints and the sound runs on the scaled time.
+  let timeScale = 1;
+  let timeLost = 0; // real seconds the slow motion has cost, so the stars twinkle on game time too
 
   // --- Post-processing ----------------------------------------------------------
 
@@ -190,6 +194,8 @@ export function createGame({ renderer, camera, controls }) {
 
   const hud = createHud({ cores: cores.length, rivals: rivals.length }, () => reset());
 
+  const hints = createHints({ controls });
+
   // --- Game state ---------------------------------------------------------------
 
   function reset() {
@@ -243,6 +249,8 @@ export function createGame({ renderer, camera, controls }) {
     cameraScale = REACH * player.shadow;
 
     hud.hideOverlay();
+    hints.reset();
+    timeScale = 1;
     audio.reset();
   }
 
@@ -565,7 +573,9 @@ export function createGame({ renderer, camera, controls }) {
   return {
     scene,
 
-    update(elapsed, delta) {
+    update(elapsed, frameDelta) {
+      const delta = frameDelta * timeScale;
+      timeLost += frameDelta - delta;
       if (player.state === 'alive') stats.time += delta;
 
       // Sizes ease toward what the mass calls for; falling black holes shrink as they near their eater.
@@ -610,21 +620,36 @@ export function createGame({ renderer, camera, controls }) {
         stats.peakMass = Math.max(stats.peakMass, player.mass);
       }
 
-      // Who outweighs whom, the rings around anything heavier, and how close you are to one.
+      // Who outweighs whom, the rings around anything heavier, and how close you are to one. A hint lights up
+      // the black hole it's explaining (last frame's, which is close enough).
       let danger = 0;
+      const hint = hints.focus;
       for (const hole of holes) {
         if (hole === player) continue;
         hole.edible = player.mass > hole.mass;
+        const lit = hint?.hole === hole ? hint.glow : 0;
 
-        const showRing = hole.state === 'alive' && !hole.edible && player.state === 'alive';
+        const showRing = hole.state === 'alive' && (!hole.edible || lit > 0) && player.state === 'alive';
         hole.ring.visible = showRing;
         if (!showRing) continue;
+        hole.ring.position.copy(hole.position);
+        hole.ring.material.color.copy(hole.edible ? PREY_TINT : DANGER_TINT);
+        if (hole.edible) {
+          hole.ring.scale.setScalar(hint.radius);
+          hole.ring.material.opacity = 0.8 * lit;
+          continue;
+        }
         const radius = dangerRadius(hole, player);
         const distance = planarDistance(hole.position, player.position);
-        hole.ring.position.copy(hole.position);
         hole.ring.scale.setScalar(radius);
-        hole.ring.material.opacity = 0.7 * (1 - smoothstep(distance, radius * 3, radius * 12));
+        hole.ring.material.opacity = Math.max(0.7 * (1 - smoothstep(distance, radius * 3, radius * 12)), lit);
         danger = Math.max(danger, (radius / Math.max(distance, 1e-6)) ** 2);
+      }
+      reachRing.visible = hint?.kind === 'lighter' && player.state === 'alive';
+      if (reachRing.visible) {
+        reachRing.position.copy(player.position);
+        reachRing.scale.setScalar(REACH * player.size);
+        reachRing.material.opacity = 0.6 * hint.glow;
       }
 
       if (!won && player.state === 'alive' && holes.every((hole) => hole === player || hole.state === 'gone')) {
@@ -647,7 +672,7 @@ export function createGame({ renderer, camera, controls }) {
 
       // --- Uniforms ---
       const { uniforms } = starMaterial;
-      uniforms.uTime.value = elapsed;
+      uniforms.uTime.value = elapsed - timeLost;
       uniforms.uWarpCount.value = warpers.length;
       warpers.forEach((hole, i) => uniforms.uWarps.value[i].set(hole.position.x, hole.position.y, hole.position.z, REACH * hole.size));
 
@@ -662,7 +687,8 @@ export function createGame({ renderer, camera, controls }) {
 
       if (player.state !== 'alive') danger = 0;
       hud.update({ camera, player, holes, danger });
-      audio.update(delta, { player, danger, stars: absorbed.count[player.index] });
+      timeScale = hints.update(frameDelta, { camera, player, holes });
+      audio.update(frameDelta, { player, danger, stars: absorbed.count[player.index], timeScale });
     },
 
     render(delta) {
@@ -677,6 +703,7 @@ export function createGame({ renderer, camera, controls }) {
       pointer.dispose();
       audio.dispose();
       hud.dispose();
+      hints.dispose();
       lensPass.dispose();
       bloomPass.dispose();
       outputPass.dispose();
