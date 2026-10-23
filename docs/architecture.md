@@ -14,6 +14,7 @@ main.js ──► game.js ──┬─► config.js        constants (imported b
                       ├─► jets.js          createJets
                       ├─► shaders.js       GLSL strings
                       ├─► pointer.js       createPointer (mouse and touch steering)
+                      ├─► audio.js ──► audio.css   createAudio (synthesised music, ambience, effects)
                       ├─► hud.js ──► hud.css
                       └─► utils.js         mulberry32, createStarfield, disposeObject
 ```
@@ -61,7 +62,7 @@ Because steps 2 and 3 share one random stream, any change that consumes a differ
 9. **Rings and win check.** Recomputes who outweighs you, updates the danger rings and the vignette strength, and checks for victory.
 10. **Camera.** Follows the player, or whatever swallowed it, and smoothly scales the orbit offset as you grow. This keeps the user's chosen orbit angle and zoom. `minDistance` and `maxDistance` are set each frame to 2.5×–40× your reach. The backdrop starfield is moved to the camera so it reads as infinitely far away.
 11. **Uniforms.** Writes the warpers into `uWarps` and the on-screen black holes into the lens pass's `uLenses`.
-12. **HUD.** Updates the mass readout, the feeding meter, the edge arrows and the vignette.
+12. **HUD and audio.** Updates the mass readout, the feeding meter, the edge arrows and the vignette, then hands the danger, your feeding rate, speed and mass, and the stars you absorbed this frame to the audio layers. See [Audio](#audio-audiojs).
 
 `render(delta)` then calls `composer.render()`.
 
@@ -137,7 +138,7 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 - Plain DOM layered over the canvas, at z-index 5. The intro panel sits at 10 and the end-of-game card at 11.
 - It's kept minimal for immersion: a frameless mass readout with a thin feeding meter, the danger vignette, and edge arrows. There are no toasts or other messages during play. Anything a player needs to know up front goes in the intro panel, which `main.js` fades out at the first click, touch, key press or scroll, or after 20 s.
 - Edge arrows are drawn for the five nearest live black holes, and only while they're off screen. They move with `transform` only and never change text, so nothing is measured or laid out per frame.
-- Only the end card accepts pointer events, so you can orbit the camera behind it.
+- Only the end card accepts pointer events, so you can orbit the camera behind it. (The settings gear in the top-left corner belongs to `audio.js`.)
 
 ## Pointer input (`pointer.js`)
 
@@ -151,6 +152,55 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
   - A lone finger becomes a joystick (`STICK`). A second finger cancels it, and no new joystick starts until every finger has lifted.
   - The `.bh-stick` element is moved only on pointer events, not every frame.
 
+## Audio (`audio.js`)
+
+Every sound is synthesised with the Web Audio API. There are no audio files, and `three` is still the only dependency. `createAudio({ camera })` keeps its own nodes and its settings menu, the same way the HUD keeps its DOM.
+
+- **Startup.** Browsers allow sound only after a click, tap or key press, so the `AudioContext` and the live layers are built at the first one (`pointerdown`, `pointerup`, `touchend` or `keydown`). The music doesn't need a gesture to render, so that starts as soon as the module loads.
+- **Mixing.** Each bus sets its level from `AUDIO` in `config.js`:
+
+  ```
+  music ────┐
+            ├─► horizon (lowpass) ──┐
+  ambience ─┘                       ├─► master ──► highpass 30 Hz ──► limiter ──► speakers
+  effects ──────────────────────────┤
+  reverb (generated impulse) ───────┘
+  ```
+
+- **Music.** A 40 s loop in D minor: four chords of detuned sawtooth pads, a root drone, a high shimmer, and a sparse hummed melody, all in a 6 s reverb. It's rendered once in an `OfflineAudioContext` at 32 kHz and played by a looping `AudioBufferSourceNode`.
+  - **Hums.** Each melody note, star chime and note of the reward chord is a hum (`hum()`): two sines a few cents apart, so they beat slowly, with quiet harmonics and no strike. In the melody, they swell up at the pad's own pitch.
+  - Everything still sounding after the 40 s (the last chord's release, the hums and the reverb) is added back onto the start of the buffer. That's what the next pass round the loop would hear, so the loop has no seam.
+  - The melody's timing comes from the music's own `mulberry32` seed, never the universe's stream.
+- **Ambience.** These layers run all the time and follow the game at 20 Hz:
+  - wind: band-passed pink noise, brighter and louder with speed
+  - rumble: low brown noise, heavier as you grow
+  - tension: two low sawtooths a semitone apart, opening up and throbbing faster as `danger` rises. The music also backs off as `danger` rises.
+- **Feeding.** While `appetite` is up, you hear a swirl of band-passed noise with one of the `FEEDS` under it. Each star crossing your shadow also plays a short hum from the D minor pentatonic scale, D3 to D4. Chimes are rate-limited to one every 60–220 ms, louder when more stars land at once.
+  - The six feeding sounds are all built at startup and all keep running, but only the chosen one is turned up. Each one's `follow(feeding)` sets it from the feeding rate at 20 Hz. Gulps are events instead, fired from `update()`.
+
+    | Key | Sound |
+    |-----|-------|
+    | `crackle` | Sparse, bright clicks above 1.8 kHz (the original) |
+    | `tuned` | Pink noise through six narrow band-passes on D minor chord tones (D2 up to D4), like breath across a bottle. The top three come in as feeding rises |
+    | `drone` | A low D–A chord of slowly beating oscillators, whose lowpass opens as feeding rises |
+    | `rain` | Longer, sparser grains than the crackle, kept between 250 and 800 Hz, and pattering faster as feeding rises |
+    | `whoosh` | Low brown noise panned around you at the disk's speed, swelling as it passes the middle |
+    | `gulps` | Soft low notes sliding down into place, 1 to 4 a second as feeding rises |
+
+  - Which one plays is the player's choice. The default is `AUDIO.feeding` (`tuned`). The **Feeding** section of the settings menu picks another, which is kept in `localStorage`. Picking one plays it for 2.5 s as if you were feeding hard, so you hear what you chose without flying into stars. Their levels were matched by measurement, allowing for low sounds seeming quieter, so switching doesn't change how loud feeding is.
+- **Events.** `fall()` and `swallow()` in `game.js` call these:
+
+  | Call | When | Sound |
+  |------|------|-------|
+  | `pull` | A black hole starts falling into you | A rising rush |
+  | `devour` | You swallow it | A falling sub-bass thud, plus a hummed Dsus2 chord rolling upward |
+  | `fall` | You start falling in | A wavering, falling tone over a building roar |
+  | `swallowed` | You're swallowed | A final thud |
+  | `distant` | Two other holes merge | A muffled thud, panned by the camera and quieter with distance |
+
+  When you fall in, the horizon filter closes and the music's `playbackRate` drops to a quarter, so time seems to stall. `reset()` opens the filter again, restores the rate, and silences any effect that's still ringing.
+- **Mute.** The gear in the top-left corner opens switches for Sound (the master mute, also **M**), Music and Effects (which covers the ambience too), and below them the Feeding choices. Each setting is kept in `localStorage`. The master mute fades out and then suspends the context, so muted audio costs nothing; Music and Effects just zero their bus gains. The context is also suspended while the tab is hidden.
+
 ## Lifecycle
 
-`dispose()` removes the window listeners (keyboard, blur, resize), the pointer listeners, and the HUD and joystick elements. It also disposes the post-processing passes, the composer, and every geometry, material and texture in the scene. It leaves the renderer, camera and controls alone, because the host owns them.
+`dispose()` removes the window listeners (keyboard, blur, resize), the pointer listeners, the audio's unlock and visibility listeners, and the HUD, joystick and settings menu elements. It closes the `AudioContext`, and disposes the post-processing passes, the composer, and every geometry, material and texture in the scene. It leaves the renderer, camera and controls alone, because the host owns them.

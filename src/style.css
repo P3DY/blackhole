@@ -20,7 +20,7 @@ body {
 #intro {
   position: fixed;
   z-index: 10;
-  top: 16px;
+  top: 50px; /* under the settings gear */
   left: 16px;
   max-width: min(360px, calc(100vw - 32px));
   padding: 16px 18px;

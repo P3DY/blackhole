@@ -53,6 +53,7 @@ import { createDisk } from './disk.js';
 import { createJets } from './jets.js';
 import { createHud } from './hud.js';
 import { createPointer } from './pointer.js';
+import { createAudio } from './audio.js';
 import { createStarfield, disposeObject, mulberry32 } from './utils.js';
 
 const { clamp, damp, smoothstep } = THREE.MathUtils;
@@ -174,6 +175,7 @@ export function createGame({ renderer, camera, controls }) {
     event.preventDefault();
     pressed.add(event.code);
     if (!event.repeat && KEYS.restart.includes(event.code)) reset();
+    if (!event.repeat && KEYS.mute.includes(event.code)) audio.toggleMute();
   }
   const onKeyUp = (event) => pressed.delete(event.code);
   const onBlur = () => pressed.clear();
@@ -183,6 +185,8 @@ export function createGame({ renderer, camera, controls }) {
   window.addEventListener('blur', onBlur);
 
   const pointer = createPointer({ camera, controls, element: renderer.domElement });
+
+  const audio = createAudio({ camera });
 
   const hud = createHud({ cores: cores.length, rivals: rivals.length }, () => reset());
 
@@ -239,6 +243,7 @@ export function createGame({ renderer, camera, controls }) {
     cameraScale = REACH * player.shadow;
 
     hud.hideOverlay();
+    audio.reset();
   }
 
   // `victim` starts spiralling into `eater`.
@@ -247,6 +252,8 @@ export function createGame({ renderer, camera, controls }) {
     victim.eater = eater;
     victim.fallFrom = Math.max(planarDistance(victim.position, eater.position), 1e-6);
     victim.thrust.set(0, 0, 0);
+    if (victim === player) audio.fall();
+    else if (eater === player) audio.pull(victim.mass / player.mass);
   }
 
   function swallow(victim, eater) {
@@ -261,8 +268,12 @@ export function createGame({ renderer, camera, controls }) {
     if (eater === player) {
       if (victim.kind === 'core') stats.cores++;
       else stats.rivals++;
+      audio.devour(victim.mass / eater.mass);
     } else if (victim === player) {
       hud.showGameOver(eater, stats);
+      audio.swallowed();
+    } else {
+      audio.distant(eater.position, player);
     }
   }
 
@@ -651,6 +662,7 @@ export function createGame({ renderer, camera, controls }) {
 
       if (player.state !== 'alive') danger = 0;
       hud.update({ camera, player, holes, danger });
+      audio.update(delta, { player, danger, stars: absorbed.count[player.index] });
     },
 
     render(delta) {
@@ -663,6 +675,7 @@ export function createGame({ renderer, camera, controls }) {
       window.removeEventListener('blur', onBlur);
       window.removeEventListener('resize', onResize);
       pointer.dispose();
+      audio.dispose();
       hud.dispose();
       lensPass.dispose();
       bloomPass.dispose();

@@ -115,6 +115,13 @@ export const SIDE_TRIPS = [
 
 export const UNIVERSE_SEED = 1987; // the same universe on every visit
 
+// --- Sound ------------------------------------------------------------------------
+//
+// Everything you hear is synthesised by audio.js; there are no sound files. The levels are gains, 0–1.
+// `feeding` is the feeding sound you hear until you pick another in the settings menu: 'crackle', 'tuned',
+// 'drone', 'rain', 'whoosh' or 'gulps' (see FEEDS in audio.js).
+export const AUDIO = { master: 0.8, music: 0.5, ambience: 0.6, effects: 0.8, feeding: 'tuned' };
+
 // Mouse: steers toward the point under the cursor, with no push within `dead` of the black hole and full
 // thrust from `full`, both as shares of the screen height.
 export const POINTER = { dead: 0.03, full: 0.2 };
@@ -128,4 +135,5 @@ export const KEYS = {
   right: ['KeyD', 'ArrowRight'],
   boost: ['ShiftLeft', 'ShiftRight'],
   restart: ['KeyR'],
+  mute: ['KeyM'],
 };

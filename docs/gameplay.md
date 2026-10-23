@@ -127,3 +127,15 @@ The HUD is deliberately sparse, and nothing pops up during play. Weight relation
 - **Edge arrows:** for each of the five nearest live black holes that is off screen, an arrow pinned to the screen edge points toward it. Blue means you outweigh it, red means it outweighs you.
 - **Intro panel:** the pitch, what the rings and arrows mean, and the controls. It fades at the first click, touch, key press or scroll, or after 20 s.
 - **End card:** peak mass, stars, cores swallowed out of 12, rivals and time.
+- **Settings:** a faint gear in the top-left corner opens switches for Sound, Music and Effects, and a choice of feeding sound. **M** toggles Sound.
+
+## Sound
+
+Sound also carries information, so the screen can stay quiet:
+
+- **Wind** gets brighter the faster you drift, and a low **rumble** gets heavier as you grow.
+- **Feeding** sounds like a swirl over a sound you pick in the settings: tuned breath (the default), a drone, rain, a circling whoosh, gulps, or the original crackle. Each star crossing your shadow also plays a soft low hum.
+- **Danger:** as you near something heavier, a low growl rises and throbs faster, and the music backs off. It tracks the same `danger` value as the red vignette.
+- **Swallowing** a core or rival: a rush as it starts to fall in, then a deep thud and a rising chord.
+- **Being swallowed:** a falling, wavering tone. Then the world goes muffled and the music slows to a crawl until you restart.
+- **Somewhere else,** when two other black holes merge, you hear a muffled thud, panned toward it and quieter the further away it is.

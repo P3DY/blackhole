@@ -81,6 +81,16 @@ If you raise `RIVAL_PACE.hunt`, `HUNT_TIME`, `HAWKING` or `BOOST_COST`, or lower
 
 Bloom is set where `UnrealBloomPass` is created in `game.js`: strength 0.75, radius 0.4, threshold 0.55.
 
+## Sound
+
+| Constant | Default | Effect |
+|----------|--------:|--------|
+| `AUDIO` | master 0.8 · music 0.5 · ambience 0.6 · effects 0.8 · feeding `'tuned'` | Gains for each bus (see [architecture.md](architecture.md#audio-audiojs)). Music and ambience both pass through the horizon filter. Effects include the feeding sounds and star chimes. `feeding` is the feeding sound you hear until you pick another in the settings menu: `'crackle'`, `'tuned'`, `'drone'`, `'rain'`, `'whoosh'` or `'gulps'`. |
+
+- The music is normalised to a 0.9 peak before `AUDIO.music` is applied, so changing the score doesn't change its loudness.
+- A limiter sits after the master gain, so pushing levels up squashes the loudest moments (being swallowed, a big meal) rather than clipping them.
+- The score itself (chords, loop length, melody density), the feeding sounds' levels and how each layer follows the game are set in `audio.js`, next to the code that uses them.
+
 ## Capacity limits
 
 Check these before adding content:

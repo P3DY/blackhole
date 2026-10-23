@@ -1,0 +1,179 @@
+/* Settings, top left: a gear as faint as the rest of the HUD until you reach for it. Above the intro (10). */
+.bh-settings {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 12;
+  font-size: 12px;
+  color: #c8d0e0;
+}
+
+.bh-gear {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: inherit;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  opacity: 0.45;
+  cursor: pointer;
+  transition:
+    opacity 0.2s,
+    background-color 0.2s;
+}
+
+.bh-gear:hover,
+.bh-gear:focus-visible,
+.bh-settings.open .bh-gear {
+  opacity: 0.9;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.bh-gear svg {
+  width: 17px;
+  height: 17px;
+  fill: currentColor;
+  fill-rule: evenodd;
+  filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.9));
+  transition: transform 0.3s;
+}
+
+.bh-settings.open .bh-gear svg {
+  transform: rotate(45deg);
+}
+
+.bh-panel {
+  margin-top: 4px;
+  padding: 6px 4px;
+  min-width: 112px;
+  background: rgba(12, 14, 22, 0.8);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+}
+
+.bh-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.bh-switch:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.bh-switch.dim {
+  opacity: 0.4;
+}
+
+.bh-switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* A small pill switch. */
+.bh-switch span {
+  position: relative;
+  flex: none;
+  width: 22px;
+  height: 12px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  transition: background-color 0.2s;
+}
+
+.bh-switch span::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #c8d0e0;
+  transition: transform 0.2s;
+}
+
+.bh-switch input:checked + span {
+  background: rgba(255, 176, 112, 0.7);
+}
+
+.bh-switch input:checked + span::after {
+  transform: translateX(10px);
+  background: #fff;
+}
+
+.bh-switch input:focus-visible + span {
+  outline: 1px solid #c8d0e0;
+  outline-offset: 2px;
+}
+
+/* A group of choices under a small heading, set off from the switches above it. */
+.bh-group {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.bh-group.dim {
+  opacity: 0.4;
+}
+
+.bh-heading {
+  padding: 0 8px 3px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7a8296;
+}
+
+.bh-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.bh-choice:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.bh-choice input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* A small radio dot, lit in the same orange as a switch that's on. */
+.bh-choice span {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin: 0 6px; /* centred in the width of a switch, so the labels line up */
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  transition:
+    background-color 0.2s,
+    border-color 0.2s;
+}
+
+.bh-choice input:checked + span {
+  background: rgba(255, 176, 112, 0.9);
+  border-color: transparent;
+}
+
+.bh-choice input:focus-visible + span {
+  outline: 1px solid #c8d0e0;
+  outline-offset: 2px;
+}

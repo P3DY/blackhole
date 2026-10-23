@@ -31,6 +31,8 @@ Then open the URL Vite prints (http://localhost:5173 by default).
 | Left-drag | Orbit the camera. You hold your course while you drag |
 | Scroll | Zoom |
 | **R** | Restart |
+| **M** / gear menu (top left) | Mute or unmute. The gear also mutes music or effects on their own. Settings are remembered |
+| Feeding section of the gear menu | Pick the sound you hear while you feed: Crackle, Tuned (default), Drone, Rain, Whoosh or Gulps. Picking one plays it for a moment. Your choice is remembered |
 
 On a touch screen:
 
@@ -69,6 +71,7 @@ src/
   jets.js           ring-buffered relativistic-jet particles
   shaders.js        all GLSL: star fields, disks, jets, lensing pass
   pointer.js        mouse and touch steering, and the touch joystick
+  audio.js / .css   synthesised music loop, ambience and sound effects, and the settings menu
   hud.js / hud.css  DOM overlay: mass readout, edge arrows, vignette, end-of-game card
   style.css         page base styles and intro panel
   utils.js          seeded random, backdrop starfield, GPU disposal helper
@@ -84,11 +87,11 @@ docs/
 
 ## Embedding
 
-`createGame({ renderer, camera, controls })` in `src/game.js` takes an existing three.js renderer, a `PerspectiveCamera` and `OrbitControls`. It returns `{ scene, update(elapsed, delta), render(delta), dispose() }`. Call `update` and then `render` every frame. `dispose()` removes the game's listeners, its HUD and its GPU resources. `src/main.js` is the minimal host.
+`createGame({ renderer, camera, controls })` in `src/game.js` takes an existing three.js renderer, a `PerspectiveCamera` and `OrbitControls`. It returns `{ scene, update(elapsed, delta), render(delta), dispose() }`. Call `update` and then `render` every frame. `dispose()` removes the game's listeners, its HUD, its GPU resources and its audio. `src/main.js` is the minimal host.
 
 ## Browser support
 
-The game needs WebGL 2, which every current desktop and mobile browser has. It plays with keyboard, mouse or touch. The intro panel fades out at the first click, touch, key press or scroll, or after 20 seconds. Performance depends mostly on fill rate: with additive particles, bloom and lensing at full resolution, a low-end GPU at a high pixel ratio is the usual bottleneck. The renderer caps the pixel ratio at 2.
+The game needs WebGL 2, which every current desktop and mobile browser has. It plays with keyboard, mouse or touch. The intro panel fades out at the first click, touch, key press or scroll, or after 20 seconds. Sound starts at that first click, touch or key press too, because browsers don't allow a page to play audio before one. All of it is synthesised with the Web Audio API, so there are no audio files to load. Performance depends mostly on fill rate: with additive particles, bloom and lensing at full resolution, a low-end GPU at a high pixel ratio is the usual bottleneck. The renderer caps the pixel ratio at 2.
 
 ## Origin
 
