@@ -55,6 +55,7 @@ import { createHud } from './hud.js';
 import { createHints } from './hints.js';
 import { createPointer } from './pointer.js';
 import { createAudio } from './audio.js';
+import { createSettings } from './settings.js';
 import { createStarfield, disposeObject, mulberry32 } from './utils.js';
 
 const { clamp, damp, smoothstep } = THREE.MathUtils;
@@ -188,9 +189,12 @@ export function createGame({ renderer, camera, controls }) {
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('blur', onBlur);
 
-  const pointer = createPointer({ camera, controls, element: renderer.domElement });
+  // The settings menu, where the audio and then the touch controls add their rows.
+  const settings = createSettings();
 
-  const audio = createAudio({ camera });
+  const audio = createAudio({ camera, settings });
+
+  const pointer = createPointer({ camera, controls, element: renderer.domElement, settings });
 
   const hud = createHud({ cores: cores.length, rivals: rivals.length }, () => reset());
 
@@ -250,6 +254,7 @@ export function createGame({ renderer, camera, controls }) {
 
     hud.hideOverlay();
     hints.reset();
+    pointer.recentre();
     timeScale = 1;
     audio.reset();
   }
@@ -687,7 +692,7 @@ export function createGame({ renderer, camera, controls }) {
 
       if (player.state !== 'alive') danger = 0;
       hud.update({ camera, player, holes, danger });
-      timeScale = hints.update(frameDelta, { camera, player, holes });
+      timeScale = hints.update(frameDelta, { camera, player, holes, touch: pointer.mode });
       audio.update(frameDelta, { player, danger, stars: absorbed.count[player.index], timeScale });
     },
 
@@ -704,6 +709,7 @@ export function createGame({ renderer, camera, controls }) {
       audio.dispose();
       hud.dispose();
       hints.dispose();
+      settings.dispose();
       lensPass.dispose();
       bloomPass.dispose();
       outputPass.dispose();

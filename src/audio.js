@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { AUDIO, DRAG, REACH, THRUST } from './config.js';
+import { readChoice, readFlag, writeChoice, writeFlag } from './settings.js';
 import { mulberry32 } from './utils.js';
-import './audio.css';
 
 const { clamp, smoothstep } = THREE.MathUtils;
 
@@ -47,19 +47,16 @@ const SWITCHES = [
 // Activation-triggering events (pointerdown only counts for a mouse, hence pointerup and touchend).
 const UNLOCK_EVENTS = ['pointerdown', 'pointerup', 'touchend', 'keydown'];
 
-const GEAR =
-  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.4 13a7.5 7.5 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-1.7-1L15 3.5h-4l-.4 2.5a7.4 7.4 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7.5 7.5 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7.4 7.4 0 0 0 1.7-1l2.4 1 2-3.4zM12 15.2a3.2 3.2 0 1 1 0-6.4 3.2 3.2 0 0 1 0 6.4z" /></svg>';
-
 const midi = (note) => 440 * 2 ** ((note - 69) / 12);
 
 // Everything you hear, synthesised with the Web Audio API: there are no sound files. Browsers only allow sound
 // after a click, tap or key press, so nothing is built until the first one. `camera` pans distant sounds.
-// It also owns the settings menu in the top-left corner; M toggles the master mute too (game.js handles the key).
-export function createAudio({ camera }) {
+// It adds its switches and the feeding sounds to `settings` (the menu); M toggles the master mute too (game.js
+// handles the key).
+export function createAudio({ camera, settings }) {
   const off = Object.fromEntries(SWITCHES.map(({ key, storage }) => [key, readFlag(storage)]));
   let feed = readChoice(FEED_STORAGE, FEEDS.map(([key]) => key), AUDIO.feeding);
   const menu = buildMenu();
-  document.body.append(menu.root);
 
   let ctx = null;
   let muted = off.sound;
@@ -287,87 +284,22 @@ export function createAudio({ camera }) {
   for (const type of UNLOCK_EVENTS) window.addEventListener(type, unlock, { capture: true, passive: true });
   document.addEventListener('visibilitychange', onVisibility);
 
-  // A gear button that opens a small panel of switches. Clicks inside it never reach the canvas.
+  // Its rows in the settings menu: a switch for each of SWITCHES, then the feeding sounds.
   function buildMenu() {
-    const root = document.createElement('div');
-    root.className = 'bh-settings';
-    const gear = document.createElement('button');
-    gear.type = 'button';
-    gear.className = 'bh-gear';
-    gear.title = 'Settings';
-    gear.setAttribute('aria-label', 'Settings');
-    gear.setAttribute('aria-expanded', 'false');
-    gear.innerHTML = GEAR;
-    const panel = document.createElement('div');
-    panel.className = 'bh-panel';
-    panel.hidden = true;
-    const addSwitch = (label, title, onChange) => {
-      const row = document.createElement('label');
-      row.className = 'bh-switch';
-      row.title = title;
-      const input = document.createElement('input');
-      input.type = 'checkbox';
-      input.addEventListener('change', () => {
-        input.blur(); // a focused checkbox would be re-toggled by Space
-        onChange(input.checked);
-      });
-      row.append(input, document.createElement('span'), label);
-      panel.append(row);
-      return input;
-    };
     const inputs = {};
-    for (const { key, label } of SWITCHES) inputs[key] = addSwitch(label, key === 'sound' ? 'M toggles' : '', (on) => set(key, !on));
+    for (const { key, label } of SWITCHES) inputs[key] = settings.addSwitch(label, key === 'sound' ? 'M toggles' : '', (on) => set(key, !on));
 
     // Which feeding sound plays. Picking one (even the current one) plays it for a moment.
-    const feeding = document.createElement('div');
-    feeding.className = 'bh-group';
-    feeding.innerHTML = '<div class="bh-heading">Feeding</div>';
-    const choices = {};
-    for (const [key, label, description] of FEEDS) {
-      const row = document.createElement('label');
-      row.className = 'bh-choice';
-      row.title = description;
-      const input = document.createElement('input');
-      input.type = 'radio';
-      input.name = 'bh-feeding';
-      input.addEventListener('click', () => {
-        input.blur(); // a focused radio would take the arrow keys from steering
-        chooseFeed(key);
-      });
-      row.append(input, document.createElement('span'), label);
-      feeding.append(row);
-      choices[key] = input;
-    }
-    panel.append(feeding);
-    root.append(gear, panel);
-
-    const open = (value) => {
-      panel.hidden = !value;
-      gear.setAttribute('aria-expanded', String(value));
-      root.classList.toggle('open', value);
-    };
-    gear.addEventListener('click', () => {
-      gear.blur();
-      open(panel.hidden);
-    });
-    const onOutside = (event) => !root.contains(event.target) && open(false);
-    const onKey = (event) => event.code === 'Escape' && open(false);
-    window.addEventListener('pointerdown', onOutside);
-    window.addEventListener('keydown', onKey);
+    const feeding = settings.addGroup('Feeding');
+    const choices = settings.addChoices(feeding, FEEDS, chooseFeed);
 
     return {
-      root,
       draw() {
         for (const { key } of SWITCHES) inputs[key].checked = !off[key];
         choices[feed].checked = true;
         // Music and effects only matter while the sound is on, and the feeding sounds while effects are on.
         for (const key of ['music', 'effects']) inputs[key].closest('label').classList.toggle('dim', off.sound);
         feeding.classList.toggle('dim', off.sound || off.effects);
-      },
-      dispose() {
-        window.removeEventListener('pointerdown', onOutside);
-        window.removeEventListener('keydown', onKey);
-        root.remove();
       },
     };
   }
@@ -628,43 +560,10 @@ export function createAudio({ camera }) {
     dispose() {
       for (const type of UNLOCK_EVENTS) window.removeEventListener(type, unlock, { capture: true });
       document.removeEventListener('visibilitychange', onVisibility);
-      menu.dispose();
       ctx?.close();
       ctx = null;
     },
   };
-}
-
-function readFlag(storage) {
-  try {
-    return localStorage.getItem(storage) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function writeFlag(storage, value) {
-  writeChoice(storage, value ? '1' : '0');
-}
-
-// A stored choice if it's one of `options`, else `fallback` (or the first option, if that isn't one either).
-function readChoice(storage, options, fallback) {
-  let value = null;
-  try {
-    value = localStorage.getItem(storage);
-  } catch {
-    // unavailable storage just means nothing was stored
-  }
-  if (options.includes(value)) return value;
-  return options.includes(fallback) ? fallback : options[0];
-}
-
-function writeChoice(storage, value) {
-  try {
-    localStorage.setItem(storage, value);
-  } catch {
-    // storage can be unavailable (private browsing, file://); the setting just won't stick
-  }
 }
 
 // --- Synthesis helpers (for live and offline contexts alike) ------------------------

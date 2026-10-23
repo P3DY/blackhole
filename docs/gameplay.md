@@ -125,7 +125,7 @@ Rivals start with staggered feed timers, so they don't all leave their home gala
 
 There's no introduction: the game starts straight away and teaches itself as you play.
 
-- **Controls** are shown one at a time as looping gestures that fade in and out until you've done them: drift (the mouse, W A S D, or a one-finger joystick), then boost (Shift, the right mouse button, or dragging past the joystick ring), then look around (left-drag, or two fingers). Each waits 1.5 s after the last one is done. Anything you've already done counts, so you only see what you haven't found yet.
+- **Controls** are shown one at a time as looping gestures that fade in and out until you've done them: drift (the mouse, W A S D, or the touch mode's gesture), then boost (Shift, the right mouse button, or the touch mode's boost), then look around (left-drag, or two fingers). On a touch screen the drift and boost gestures follow the touch mode picked in the settings. Each waits 1.5 s after the last one is done. Anything you've already done counts, so you only see what you haven't found yet.
 - **Weight** is explained the first time it matters. Nearing a black hole that outweighs you, or one you outweigh, slows time to 4% for about 4.5 s while a label over it says what it means: don't cross a heavier one's red ring, and bring a lighter one inside your reach to swallow it.
 - What you've learned stays learned when you restart with **R**. A reload starts over.
 
@@ -139,7 +139,20 @@ The HUD is deliberately sparse. Apart from the hints, nothing pops up during pla
 - **Edge arrows:** for each of the five nearest live black holes that is off screen, an arrow pinned to the screen edge points toward it. Blue means you outweigh it, red means it outweighs you.
 - **Hints:** control gestures low in the middle of the screen, and labels over a black hole while time is slowed (see [Hints](#hints)).
 - **End card:** peak mass, stars, cores swallowed out of 12, rivals and time.
-- **Settings:** a faint gear in the top-left corner opens switches for Sound, Music and Effects, and a choice of feeding sound. **M** toggles Sound.
+- **Settings:** a faint gear in the top-left corner opens switches for Sound, Music and Effects, and a choice of feeding sound. **M** toggles Sound. On a touch screen it also picks how you steer (see [Touch controls](#touch-controls)).
+
+## Touch controls
+
+Two fingers always orbit and zoom the camera. What one finger does is a choice in the settings menu, which is remembered:
+
+| Mode | Steer | Boost |
+|------|-------|-------|
+| **Joystick** (default) | Drag from where your finger lands. Further means more thrust, up to the ring | Drag past the ring |
+| **Follow finger** | Touch where you want to go, as with the mouse. Further from you means more thrust | Double-tap and hold |
+| **Tilt** | Tilt the phone the way you want to roll. Tipping the top away goes forward | Hold a finger down anywhere |
+
+- The joystick's **Visible** switch hides the ring and knob. It still works the same, from wherever your finger lands.
+- Tilt is measured from how you held the phone when you picked it. Restarting, or picking Tilt again, takes that again (re-centres it). On iOS the browser asks for permission to use the motion sensors the first time. Tilt needs a motion sensor and a page served over https; without them it's greyed out and the joystick is used.
 
 ## Sound
 

@@ -63,7 +63,8 @@
   inset: 0;
 }
 
-/* Touch-only devices get the touch gestures. */
+/* Touch-only devices get the touch gestures: the ones every touch mode shares, and the ones for the mode in use
+   (hints.js keeps `data-touch` on the root up to date). */
 .bh-touch {
   display: none;
 }
@@ -73,7 +74,10 @@
     display: none;
   }
 
-  .bh-touch {
+  .bh-touch:not([data-mode]),
+  .bh-hints[data-touch='joystick'] .bh-touch[data-mode='joystick'],
+  .bh-hints[data-touch='follow'] .bh-touch[data-mode='follow'],
+  .bh-hints[data-touch='tilt'] .bh-touch[data-mode='tilt'] {
     display: block;
   }
 }
@@ -238,6 +242,35 @@
   left: 11px;
 }
 
+/* Follow: the fingertip lands where the cursor's glide ends, and the trail draws out to it. */
+[data-mode='follow'] .bh-aim .bh-finger {
+  translate: 120px -70px;
+}
+
+/* Tilt: a phone, tipping away and then to the right, with a marble rolling the way you'd go. */
+.bh-phone {
+  position: absolute;
+  top: -27px;
+  left: -16px;
+  width: 32px;
+  height: 54px;
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  border-radius: 7px;
+  box-shadow: 0 0 12px rgba(255, 220, 180, 0.35);
+}
+
+.bh-marble {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(255, 220, 180, 0.8);
+}
+
 /* Look around with a mouse: hold the left button and swing. */
 .bh-look {
   display: flex;
@@ -258,7 +291,8 @@
 
 /* --- The gestures, all on the lesson's period. Visible from 10% to 68% of it. --- */
 
-.bh-lesson:is(.active, .done) :is(.bh-cursor, .bh-trail, .bh-keys kbd, .bh-shift, .bh-button, .bh-sway, .bh-finger, .bh-ring) {
+.bh-lesson:is(.active, .done)
+  :is(.bh-cursor, .bh-trail, .bh-keys kbd, .bh-shift, .bh-button, .bh-sway, .bh-finger, .bh-ring, .bh-phone, .bh-marble) {
   animation-duration: var(--period);
   animation-iteration-count: infinite;
   animation-timing-function: ease-in-out;
@@ -526,6 +560,144 @@
   100% {
     opacity: 0;
     transform: translateX(0);
+  }
+}
+
+/* Follow drift: touch ahead and hold, while the trail draws out to the finger (bh-trail). */
+.bh-lesson:is(.active, .done) [data-mode='follow'] .bh-finger {
+  animation-name: bh-finger-press;
+}
+
+@keyframes bh-finger-press {
+  0%,
+  10% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+  16%,
+  60% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  66%,
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+/* Follow boost: tap, then touch again and hold. The held finger glows like the joystick ring past its edge. */
+.bh-lesson:is(.active, .done)[data-lesson='boost'] [data-mode='follow'] .bh-finger {
+  animation-name: bh-finger-double;
+}
+
+@keyframes bh-finger-double {
+  0%,
+  10% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+  14% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  18% {
+    opacity: 0.15;
+    transform: scale(1.3);
+  }
+  22% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 14px rgba(255, 255, 255, 0.45);
+  }
+  30%,
+  60% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 22px 4px rgba(140, 170, 255, 0.8);
+  }
+  66%,
+  100% {
+    opacity: 0;
+    transform: scale(1);
+    box-shadow: 0 0 22px 4px rgba(140, 170, 255, 0.8);
+  }
+}
+
+/* Tilt boost: one finger down and held, glowing the same way. */
+.bh-lesson:is(.active, .done)[data-lesson='boost'] [data-mode='tilt'] .bh-finger {
+  animation-name: bh-finger-hold;
+}
+
+@keyframes bh-finger-hold {
+  0%,
+  10% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+  16% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 14px rgba(255, 255, 255, 0.45);
+  }
+  26%,
+  60% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 22px 4px rgba(140, 170, 255, 0.8);
+  }
+  66%,
+  100% {
+    opacity: 0;
+    transform: scale(1);
+    box-shadow: 0 0 22px 4px rgba(140, 170, 255, 0.8);
+  }
+}
+
+/* Tilt drift: the top tips away (the marble rolls up the screen), then the right edge does (it rolls right). */
+.bh-lesson:is(.active, .done) .bh-phone {
+  animation-name: bh-phone;
+}
+
+.bh-lesson:is(.active, .done) .bh-marble {
+  animation-name: bh-marble;
+}
+
+@keyframes bh-phone {
+  0%,
+  16% {
+    transform: perspective(160px) rotateX(0) rotateY(0);
+  }
+  28%,
+  36% {
+    transform: perspective(160px) rotateX(30deg) rotateY(0);
+  }
+  48%,
+  56% {
+    transform: perspective(160px) rotateX(0) rotateY(30deg);
+  }
+  64%,
+  100% {
+    transform: perspective(160px) rotateX(0) rotateY(0);
+  }
+}
+
+@keyframes bh-marble {
+  0%,
+  16% {
+    translate: 0 0;
+  }
+  28%,
+  36% {
+    translate: 0 -16px;
+  }
+  48%,
+  56% {
+    translate: 9px 0;
+  }
+  64%,
+  100% {
+    translate: 0 0;
   }
 }
 

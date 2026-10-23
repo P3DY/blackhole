@@ -125,5 +125,8 @@ Check these before adding content:
   - loose stars: 9,000.
   These counts drive both GPU load and how many captures there are to make.
 - **Controls:** `KEYS` maps actions to `KeyboardEvent.code` values. If you change the keys, update the keycaps drawn by the control lessons in `hints.js`. Every listed code has its default browser action suppressed.
-  - `POINTER` sets the mouse dead zone and the distance for full thrust, as shares of the screen height (defaults 0.03 and 0.2).
-  - `STICK` sizes the touch joystick in CSS pixels: full thrust at `radius` (56), a dead zone of `dead` (6), and boost beyond `boost` × the radius (1.6).
+  - `POINTER` sets the mouse dead zone and the distance for full thrust, as shares of the screen height (defaults 0.03 and 0.2). The `follow` touch mode uses it too.
+  - `TOUCH_MODE` is the touch mode you get until you pick another in the settings menu: `'joystick'` (the default), `'follow'` or `'tilt'`.
+  - `STICK` sizes the touch joystick in CSS pixels: full thrust at `radius` (56), a dead zone of `dead` (6), and boost beyond `boost` × the radius (1.6). If you change `radius`, update the ghost ring in `hints.css` (`.bh-ring`), which is drawn at that size.
+  - `DOUBLE_TAP` is the follow mode's boost gesture: a touch that lands within `gap` (0.3 s) of a tap shorter than `tap` (0.3 s) boosts for as long as it's held.
+  - `TILT` is in degrees from the level reading: no push within `dead` (3°), full thrust from `full` (18°). A smaller `full` makes it twitchier.

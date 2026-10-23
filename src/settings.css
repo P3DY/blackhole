@@ -1,4 +1,5 @@
-/* Settings, top left: a gear as faint as the rest of the HUD until you reach for it. Above everything else. */
+/* Settings, from settings.js, top left: a gear as faint as the rest of the HUD until you reach for it. Above
+   everything else. */
 .bh-settings {
   position: fixed;
   top: 12px;
@@ -49,6 +50,10 @@
   margin-top: 4px;
   padding: 6px 4px;
   min-width: 112px;
+  max-height: calc(100vh - 54px); /* scrolls on a short screen, such as a phone on its side */
+  max-height: calc(100dvh - 54px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: rgba(12, 14, 22, 0.8);
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -71,6 +76,11 @@
 
 .bh-switch.dim {
   opacity: 0.4;
+}
+
+/* A switch that belongs to the choice above it, indented to line up with that choice's label. */
+.bh-switch.bh-sub {
+  padding-left: 36px;
 }
 
 .bh-switch input {
@@ -127,6 +137,17 @@
   opacity: 0.4;
 }
 
+/* Only touch screens get the touch settings. */
+.bh-touch-only {
+  display: none;
+}
+
+@media (any-pointer: coarse) {
+  .bh-touch-only {
+    display: block;
+  }
+}
+
 .bh-heading {
   padding: 0 8px 3px;
   font-size: 10px;
@@ -147,6 +168,16 @@
 
 .bh-choice:hover {
   background: rgba(255, 255, 255, 0.06);
+}
+
+/* A choice this device can't offer. */
+.bh-choice:has(input:disabled) {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.bh-choice:has(input:disabled):hover {
+  background: none;
 }
 
 .bh-choice input {

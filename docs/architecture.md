@@ -13,8 +13,9 @@ main.js ──► game.js ──┬─► config.js        constants (imported b
                       ├─► disk.js          createDisk
                       ├─► jets.js          createJets
                       ├─► shaders.js       GLSL strings
-                      ├─► pointer.js       createPointer (mouse and touch steering)
-                      ├─► audio.js ──► audio.css   createAudio (synthesised music, ambience, effects)
+                      ├─► settings.js ──► settings.css   createSettings (the gear menu), localStorage helpers
+                      ├─► pointer.js       createPointer (mouse and touch steering, in three touch modes)
+                      ├─► audio.js         createAudio (synthesised music, ambience, effects)
                       ├─► hud.js ──► hud.css
                       ├─► hints.js ──► hints.css   createHints (control lessons, slowed moments)
                       └─► utils.js         mulberry32, createStarfield, disposeObject
@@ -53,7 +54,7 @@ Because steps 2 and 3 share one random stream, any change that consumes a differ
 `update(elapsed, frameDelta)` first scales the host's delta: `delta = frameDelta · timeScale`. The time scale is 1 except while a hint slows the game down (see [Hints](#hints-hintsjs)). Steps 1–11 run on that scaled game time; the hints and the audio get the real `frameDelta`. Then it runs these steps in order:
 
 1. **Sizes.** Each shadow eases toward `shadowOf(mass)`. A falling hole's drawn size shrinks with the square root of how far it has fallen.
-2. **Steer.** Turns input into thrust for the player. Held keys win, and they push relative to the camera's flattened forward direction. Otherwise `pointer.steer()` supplies a push of length 0–1. With a mouse, it aims at the point on the galactic plane under the cursor, which it finds by raycasting. With touch, the joystick offset is mapped onto the same camera axes as the keys. See [Pointer input](#pointer-input-pointerjs).
+2. **Steer.** Turns input into thrust for the player. Held keys win, and they push relative to the camera's flattened forward direction. Otherwise `pointer.steer()` supplies a push of length 0–1. With a mouse, it aims at the point on the galactic plane under the cursor, which it finds by raycasting. With touch, it depends on the touch mode: the joystick's offset or the phone's tilt is mapped onto the same camera axes as the keys, or the black hole aims at the point under the finger, as it does for the cursor. See [Pointer input](#pointer-input-pointerjs).
 3. **Think.** Each live rival picks a mode and sets its thrust (see [gameplay.md](gameplay.md#rivals)).
 4. **Move.** Each live roamer integrates thrust, drag and the gravity of every other live hole in **4 substeps**, so close passes stay accurate. Shadow crossings and reach captures are checked inside each substep and start a `fall()`.
 5. **Sink.** Falling holes ride along with their eater, spiral in, and are `swallow()`ed at 0.6 of its shadow.
@@ -139,7 +140,7 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 - Plain DOM layered over the canvas, at z-index 5. The hints sit at 6 (their letterbox bars at 4, under the HUD), the end-of-game card at 11 and the settings gear at 12.
 - It's kept minimal for immersion: a frameless mass readout with a thin feeding meter, the danger vignette, and edge arrows. There's no intro panel and there are no toasts. The only other things on screen during play are the hints.
 - Edge arrows are drawn for the five nearest live black holes, and only while they're off screen. They move with `transform` only and never change text, so nothing is measured or laid out per frame.
-- Only the end card accepts pointer events, so you can orbit the camera behind it. (The settings gear in the top-left corner belongs to `audio.js`.)
+- Only the end card accepts pointer events, so you can orbit the camera behind it. (The settings gear in the top-left corner belongs to `settings.js`.)
 
 ## Hints (`hints.js`)
 
@@ -147,7 +148,13 @@ The game starts with no introduction. `createHints({ controls })` teaches it as 
 
 - **Control lessons.** Drift, then boost, then look around, each a gesture that loops on a 4.4 s period: fade in, play, fade out, pause. Each comes `LESSONS.wait` seconds after the one before it is done, and shows until you've done enough of it (`LESSONS` in `config.js`). Use counts from the start whether or not its lesson is showing, so a lesson you've already done is skipped.
   - Drift counts seconds at full thrust (`|thrust| / (THRUST · S · boost)`), boost counts seconds of `player.boosting`, and look counts the radians the camera turns, read from `controls.getAzimuthalAngle()` and `getPolarAngle()`. Only you turn the camera: the game's follow moves it but keeps its angles.
-  - Each lesson has a mouse-and-keyboard version and a touch version. `hints.css` picks one with a `(hover: none) and (pointer: coarse)` media query. With a mouse, drift draws a ghost cursor gliding away from the black hole at the screen's centre (the camera always targets you), over a W A S D cluster lighting in turn. With touch, a ghost fingertip opens the joystick ring and drags, past the ring for boost and with two fingers for look.
+  - Each lesson has a mouse-and-keyboard version and a touch version. `hints.css` picks one with a `(hover: none) and (pointer: coarse)` media query. With a mouse, drift draws a ghost cursor gliding away from the black hole at the screen's centre (the camera always targets you), over a W A S D cluster lighting in turn. With touch, look is two fingers swinging side to side, and drift and boost follow the touch mode, which `update()` is given as `touch` and keeps on the root as `data-touch`:
+
+    | Touch mode | Drift | Boost |
+    |------------|-------|-------|
+    | joystick | A ghost fingertip opens the joystick ring and drags | The same, out past the ring, which lights up |
+    | follow | A fingertip lands ahead of you and a dashed trail draws out to it | Tap, then touch again and hold, glowing |
+    | tilt | A phone outline tips away, then to the right, with a marble rolling the way you'd go | One fingertip held down, glowing |
   - The gestures are pure CSS animations sharing one period, so they stay in step and cost nothing per frame. When a lesson is done while showing, it flares and fades from wherever its pulse was (`--from`). Its class is dropped on `animationend`, which stops the gestures looping unseen.
   - Lessons hide while a moment is playing or you're not alive.
 - **Slowed moments.** The first time you near a black hole heavier than you, and the first time you near a lighter one, time slows to `SLOW_MOTION.scale` (4%) while a label explains it:
@@ -165,19 +172,29 @@ The game starts with no introduction. `createHints({ controls })` teaches it as 
 
 ## Pointer input (`pointer.js`)
 
-- `createPointer({ camera, controls, element })` listens for pointer events on the canvas and keeps its own input state, the same way the HUD keeps its DOM.
+- `createPointer({ camera, controls, element, settings })` listens for pointer events on the canvas and keeps its own input state, the same way the HUD keeps its DOM. It adds the Touch section to the settings menu.
 - **Mouse.** Thrust grows from 0 at `POINTER.dead` to full at `POINTER.full`. Both are measured as on-screen distance from the black hole, as shares of the screen height, so the feel doesn't change with zoom or tilt. A cursor above the horizon falls back to the ray's flattened direction.
   - While the left button is down, OrbitControls is orbiting the camera, so the last push is held rather than following a cursor that moves with the camera.
   - The right button boosts. Pan is disabled, so OrbitControls doesn't use that button.
   - Holding a movement key calls `yieldToKeys()`, which ignores the mouse until it moves again.
 - **Touch.**
   - `controls.touches` is set to `{ ONE: null, TWO: DOLLY_ROTATE }`, so one finger belongs to the game and two fingers move the camera.
-  - A lone finger becomes a joystick (`STICK`). A second finger cancels it, and no new joystick starts until every finger has lifted.
-  - The `.bh-stick` element is moved only on pointer events, not every frame.
+  - Only a lone finger counts. A second finger cancels it, and nothing more happens until every finger has lifted.
+  - What it does depends on the touch mode, picked in the **Touch** section of the settings menu (only shown where `(any-pointer: coarse)` matches) and kept in `localStorage`. The default is `TOUCH_MODE` (`joystick`). `pointer.mode` reports the one in use.
+
+    | Mode | Steer | Boost |
+    |------|-------|-------|
+    | joystick | A joystick centred where the finger lands (`STICK`) | Drag past `STICK.boost` × the ring |
+    | follow | Toward the point under the finger, exactly as for the cursor (`POINTER`) | Double-tap and hold: a touch landing within `DOUBLE_TAP.gap` of a tap shorter than `DOUBLE_TAP.tap` |
+    | tilt | Tip the phone, measured from a level reading (`TILT`) | Any lone finger held down |
+
+  - **Joystick.** The `.bh-stick` element is moved only on pointer events, not every frame. Its **Visible** switch hides it; the joystick works the same either way.
+  - **Tilt.** It reads `deviceorientation`. From `beta` and `gamma` it works out which way a marble on the screen would roll (gravity along the screen, which doesn't depend on the compass heading `alpha`), then turns that into screen axes using `screen.orientation.angle`. The first reading, after you pick tilt, is the level that the lean is measured from. A restart (`recentre()`), picking tilt again, or the screen rotating all take a new level. The lean's size, as an angle, goes through the `TILT.dead` / `TILT.full` ramp, and its direction maps onto the camera axes: tipping the top away is forward, like pushing the joystick up.
+  - Where `DeviceOrientationEvent.requestPermission` exists (iOS, and some Chrome builds), tilt asks first. Browsers only show that prompt during a tap, so if tilt is a remembered choice at load, it asks at the next tap. If permission is refused, or no reading arrives within 2 s (there's no sensor, or the page isn't served over https), Tilt is greyed out and you steer with the joystick. The stored choice stays, in case it works next time.
 
 ## Audio (`audio.js`)
 
-Every sound is synthesised with the Web Audio API. There are no audio files, and `three` is still the only dependency. `createAudio({ camera })` keeps its own nodes and its settings menu, the same way the HUD keeps its DOM.
+Every sound is synthesised with the Web Audio API. There are no audio files, and `three` is still the only dependency. `createAudio({ camera, settings })` keeps its own nodes, the same way the HUD keeps its DOM, and adds its switches and the Feeding section to the settings menu.
 
 - **Startup.** Browsers allow sound only after a click, tap or key press, so the `AudioContext` and the live layers are built at the first one (`pointerdown`, `pointerup`, `touchend` or `keydown`). The music doesn't need a gesture to render, so that starts as soon as the module loads.
 - **Mixing.** Each bus sets its level from `AUDIO` in `config.js`:
@@ -222,8 +239,14 @@ Every sound is synthesised with the Web Audio API. There are no audio files, and
   | `distant` | Two other holes merge | A muffled thud, panned by the camera and quieter with distance |
 
   When you fall in, the horizon filter closes and the music's `playbackRate` drops to a quarter, so time seems to stall. `reset()` opens the filter again, restores the rate, and silences any effect that's still ringing.
-- **Mute.** The gear in the top-left corner opens switches for Sound (the master mute, also **M**), Music and Effects (which covers the ambience too), and below them the Feeding choices. Each setting is kept in `localStorage`. The master mute fades out and then suspends the context, so muted audio costs nothing; Music and Effects just zero their bus gains. The context is also suspended while the tab is hidden.
+- **Mute.** The gear in the top-left corner opens switches for Sound (the master mute, also **M**), Music and Effects (which covers the ambience too), and below them the Feeding choices (see [Settings](#settings-settingsjs)). Each setting is kept in `localStorage`. The master mute fades out and then suspends the context, so muted audio costs nothing; Music and Effects just zero their bus gains. The context is also suspended while the tab is hidden.
+
+## Settings (`settings.js`)
+
+- `createSettings()` builds the gear in the top-left corner and its panel, and owns nothing else. Modules add rows with `addSwitch`, `addGroup` and `addChoices`, in the order they're created: the audio's switches and its Feeding section, then the pointer's Touch section. A group made with `{ touch: true }` only shows where `(any-pointer: coarse)` matches.
+- Each module keeps its own settings and remembers them with `readFlag` / `writeFlag` / `readChoice` / `writeChoice`, which treat unavailable `localStorage` (private browsing, `file://`) as nothing stored.
+- The panel closes on a click or tap outside it, or Escape. It scrolls when it's taller than the screen, as on a phone held sideways. Inputs blur after each change, so Space and the arrow keys go back to the game.
 
 ## Lifecycle
 
-`dispose()` removes the window listeners (keyboard, blur, resize), the pointer listeners, the audio's unlock and visibility listeners, and the HUD, hints, joystick and settings menu elements. It closes the `AudioContext`, and disposes the post-processing passes, the composer, and every geometry, material and texture in the scene. It leaves the renderer, camera and controls alone, because the host owns them.
+`dispose()` removes the window listeners (keyboard, blur, resize), the pointer and tilt listeners, the audio's unlock and visibility listeners, and the HUD, hints, joystick and settings menu elements. It closes the `AudioContext`, and disposes the post-processing passes, the composer, and every geometry, material and texture in the scene. It leaves the renderer, camera and controls alone, because the host owns them.

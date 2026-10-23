@@ -136,10 +136,19 @@ export const LESSONS = { wait: 1.5, drift: 1.2, boost: 0.8, look: 0.8 };
 export const SLOW_MOTION = { scale: 0.04, ease: 0.3, hold: 3.5, recover: 0.8, heavier: 6, lighter: 6 };
 
 // Mouse: steers toward the point under the cursor, with no push within `dead` of the black hole and full
-// thrust from `full`, both as shares of the screen height.
+// thrust from `full`, both as shares of the screen height. The touch mode 'follow' steers the same way.
 export const POINTER = { dead: 0.03, full: 0.2 };
-// Touch: a joystick where the finger lands, in CSS pixels. Full thrust at `radius`, boost past `boost` × radius.
+// Touch steers one of three ways, picked in the settings menu: 'joystick', 'follow' (head for the finger) or
+// 'tilt'. This is the one you get until you pick another.
+export const TOUCH_MODE = 'joystick';
+// Joystick: centred where the finger lands, in CSS pixels. Full thrust at `radius`, boost past `boost` × radius.
 export const STICK = { radius: 56, dead: 6, boost: 1.6 };
+// Follow: boost by double-tapping and holding, the second touch landing within `gap` seconds of a first one
+// that lasted under `tap` seconds.
+export const DOUBLE_TAP = { tap: 0.3, gap: 0.3 };
+// Tilt: in degrees from how you held the phone when you picked tilt or restarted. No push within `dead`, full
+// thrust from `full`. Holding a finger down boosts.
+export const TILT = { dead: 3, full: 18 };
 
 export const KEYS = {
   forward: ['KeyW', 'ArrowUp'],

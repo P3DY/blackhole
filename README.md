@@ -38,9 +38,16 @@ On a touch screen:
 
 | Gesture | Action |
 |---------|--------|
-| One-finger drag | Joystick, centred where your finger lands. Drag further for more thrust |
-| Drag past the ring | Boost |
+| One finger | Steer, in the mode picked in the gear menu's Touch section (remembered) |
 | Two fingers | Pinch to zoom, drag to orbit |
+
+| Touch mode | Steer | Boost |
+|------------|-------|-------|
+| Joystick (default) | Drag from where your finger lands; further means more thrust. Its **Visible** switch hides the ring | Drag past the ring |
+| Follow finger | Touch where you want to go | Double-tap and hold |
+| Tilt | Tilt the phone; tipping the top away goes forward. Restarting or picking Tilt again re-centres it | Hold a finger down |
+
+Tilt needs a motion sensor and a page served over https (iOS asks for permission first). Where it can't work, it's greyed out.
 
 ## How to play
 
@@ -72,8 +79,9 @@ src/
   disk.js           pooled accretion-disk particle simulation
   jets.js           ring-buffered relativistic-jet particles
   shaders.js        all GLSL: star fields, disks, jets, lensing pass
-  pointer.js        mouse and touch steering, and the touch joystick
-  audio.js / .css   synthesised music loop, ambience and sound effects, and the settings menu
+  pointer.js        mouse and touch steering: joystick, follow-finger and tilt modes
+  settings.js / .css the gear menu that the audio and touch settings add their rows to
+  audio.js          synthesised music loop, ambience and sound effects
   hud.js / hud.css  DOM overlay: mass readout, edge arrows, vignette, end-of-game card
   hints.js / .css   control lessons as looping gestures, and the slowed moments that explain weight
   style.css         page base styles

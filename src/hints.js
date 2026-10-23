@@ -26,22 +26,39 @@ const dock = (glyphs, caption, note) =>
     note ? `<small>${note}</small>` : ''
   }</div></div>`;
 
-// Each lesson has a mouse-and-keyboard version and a touch version; hints.css shows the one that fits.
+// Each lesson has a mouse-and-keyboard version and a touch version; hints.css shows the one that fits. Drift and
+// boost have a touch version for each touch mode (`data-mode`), and only the one for the mode in use shows.
 const LESSON_HTML = {
   drift: `
     <div class="bh-desk">
       <div class="bh-aim"><i class="bh-trail"></i>${CURSOR}</div>
       ${dock('<div class="bh-keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></div>', 'drift')}
     </div>
-    <div class="bh-touch">
+    <div class="bh-touch" data-mode="joystick">
       <div class="bh-thumb"><i class="bh-ring"></i><i class="bh-finger"></i></div>
       ${dock('', 'drift')}
+    </div>
+    <div class="bh-touch" data-mode="follow">
+      <div class="bh-aim"><i class="bh-trail"></i><i class="bh-finger"></i></div>
+      ${dock('', 'drift', 'touch where to go')}
+    </div>
+    <div class="bh-touch" data-mode="tilt">
+      <div class="bh-thumb"><div class="bh-phone"><i class="bh-marble"></i></div></div>
+      ${dock('', 'drift', 'tilt your phone')}
     </div>`,
   boost: `
     <div class="bh-desk">${dock(`<kbd class="bh-shift">Shift</kbd><span class="bh-or">or</span>${mouse('right')}`, 'boost', 'burns mass')}</div>
-    <div class="bh-touch">
+    <div class="bh-touch" data-mode="joystick">
       <div class="bh-thumb"><i class="bh-ring"></i><i class="bh-finger"></i></div>
       ${dock('', 'boost', 'burns mass')}
+    </div>
+    <div class="bh-touch" data-mode="follow">
+      <div class="bh-thumb"><i class="bh-finger"></i></div>
+      ${dock('', 'boost', 'double-tap and hold · burns mass')}
+    </div>
+    <div class="bh-touch" data-mode="tilt">
+      <div class="bh-thumb"><i class="bh-finger"></i></div>
+      ${dock('', 'boost', 'hold a finger down · burns mass')}
     </div>`,
   look: `
     <div class="bh-desk">${dock(`<div class="bh-look">${SWING}<div class="bh-sway">${mouse('left')}</div></div>`, 'look around')}</div>
@@ -227,8 +244,9 @@ export function createHints({ controls }) {
     },
 
     // Every frame, after the camera has moved, with the frame's real (unscaled) delta. `holes[i].edible` must be
-    // up to date. Returns the time scale for the next frame.
-    update(delta, { camera, player, holes }) {
+    // up to date, and `touch` is the touch mode in use. Returns the time scale for the next frame.
+    update(delta, { camera, player, holes, touch }) {
+      if (root.dataset.touch !== touch) root.dataset.touch = touch;
       clock += delta;
       const alive = player.state === 'alive';
       used.look += turned();
