@@ -97,6 +97,7 @@ docs/
   gameplay.md       rules, scaling, the scales past the opening, rival AI
   architecture.md   frame loop, the endless universe, rendering pipeline, data structures, performance
   tuning.md         what the constants in config.js do and how they interact
+  improvements.md   known bugs and suggested improvements not made yet, and how performance was measured
 ```
 
 ## Deploying
