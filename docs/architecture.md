@@ -48,6 +48,7 @@ Every black hole has a **slot** (see [Hole slots](#hole-slots)), stored on it as
 3. `buildFields(plan, random, fieldMaterial)` builds geometry for every field of the opening **from the same random stream**, each with its own material. It also builds each field's spatial grid once. These fields stay for good.
 4. The player and the opening's cores take the first slots. The disk pool, the jet pool, the streamer (which starts its worker), the post-processing chain, the HUD and the hints are created.
 5. `reset()` puts everything at its starting state. For the opening it rebuilds nothing: it only refills the alive flags, restores the holes and clears the pools. It makes the opening's rivals afresh, clears the streamer, and has it open the cells around you, of which there are none at the start. Retrying from a checkpoint works much the same way (see [Checkpoints](#checkpoints)).
+6. `renderer.compile()` compiles every shader in the scene, hidden objects included, with the composer's buffer bound (the scene is drawn into that, not the screen, and three.js builds different shaders for each). Otherwise the rings' shader would compile the first time a ring shows, just as a black hole comes near, and on a phone that stalls the frame. Black holes added later share it, so nothing compiles during play.
 
 Because steps 2 and 3 share one random stream, any change that consumes a different number of random values in `planUniverse` changes all of the opening's galaxy geometry after it. The cells past the opening don't use that stream: each has streams of its own (see [The endless universe](#the-endless-universe)). Rival timers and jets use `Math.random()`, so runs differ slightly even though the universe is fixed.
 
@@ -193,7 +194,9 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 - **Building cells** takes about 20 ms each (generating the particles and their grid), so the worker does it. The main thread only wraps the arrays it hands back in geometry, two cells a frame at most. Flying through new cells at tier 8 kept frames under 14 ms (p99) on a 144 Hz display. In development the worker loads three.js unbundled, so the first cells take a few seconds to arrive; in a build they arrive within a fraction of a second.
 - **Memory** is about 100 MB of JS heap at tier 15. Saving a checkpoint takes about 6 ms.
 - **Fields are frustum-culled** as whole `Points` objects, so only fields in view cost vertex work, and faded fields are hidden. The four giants past Andromeda are capped at 60,000 stars each (`MAX_GALAXY_STARS` in `universe.js`), and each cell's structure has 24,000. Their stars are drawn bigger to match, so they look about as full without the load.
-- **GPU cost** is dominated by fill rate: additive points, plus bloom and lensing at full resolution. The renderer caps the pixel ratio at 2. On weak GPUs, lowering it to 1 in `main.js` is the biggest win.
+- **GPU cost** is dominated by fill rate: additive points, plus bloom and lensing at full resolution. The renderer caps the pixel ratio at 2, and has no MSAA, since everything is drawn into the composer's buffers, which don't use it. On weak GPUs, lowering the pixel ratio to 1 in `main.js` is the biggest win.
+- **Audio** runs on its own thread, and on a phone it breaks up as soon as that thread misses a deadline, which a busy frame makes more likely. So only the chosen feeding sound runs, every effect is disconnected once it's over, and phones get a bigger buffer (see [Audio](#audio-audiojs)). The 4 s reverb is now the biggest single node, at about a third of the graph's work. A 3 s one would save about a fifth of the total, at the cost of a shorter tail. A mono reverb (`channelCount: 1`) measured slower in Chrome, not faster.
+- **Main-thread stalls during play** used to come from one-off work, which now happens before you play. The audio's slow part is built while the page is idle, and the shaders are compiled at load (see [Startup](#startup)). With the CPU throttled 4×, the first key press now takes about 60 ms, down from 0.9 s, and finishing the music's render takes about 60 ms, down from 0.4 s.
 
 ## HUD (`hud.js`)
 
@@ -261,7 +264,12 @@ The game starts with no introduction. `createHints({ controls })` teaches it as 
 
 Every sound is synthesised with the Web Audio API. There are no audio files, and `three` is still the only dependency. `createAudio({ camera, settings })` keeps its own nodes, the same way the HUD keeps its DOM, and adds the Sound tab to the settings menu: its switches and the Feeding section.
 
-- **Startup.** Browsers allow sound only after a click, tap or key press, so the `AudioContext` and the live layers are built at the first one (`pointerdown`, `pointerup`, `touchend` or `keydown`). The music doesn't need a gesture to render, so that starts as soon as the module loads.
+- **Startup.** Browsers allow sound only after a click, tap or key press (`pointerdown`, `pointerup`, `touchend` or `keydown`). Building everything at the first one stalled the game for about 0.9 s with the CPU throttled 4×, as DevTools does for a mid-range phone, just as you started to play. So it's built in two steps:
+  - `prepare()` does the slow part: the `AudioContext`, the noise buffers and the reverb, whose impulse the browser transforms up front. That's about 0.5 s at the same throttling. `requestIdleCallback` runs it once the page has loaded and gone idle, unless you're muted. The context starts suspended, and stays suspended even where the browser would allow autoplay.
+  - `start()`, at the first click, tap or key press, wires up the nodes, starts the sources and resumes the context, in about 60 ms. No source starts before then, since Chrome warns about each one that starts on a context no gesture has unlocked. If you tap before `prepare()` has run, `start()` runs it first.
+
+  The music doesn't need a gesture to render, so that starts as soon as the module loads.
+- **Latency.** On a phone or tablet (`(pointer: coarse)`), the context asks for `latencyHint: 'playback'`: a bigger buffer, so sound arrives a few tens of milliseconds later, but the audio thread can ride out a busy frame instead of breaking up. Elsewhere it's the default, `'interactive'`.
 - **Mixing.** Each bus sets its level from `AUDIO` in `config.js`:
 
   ```
@@ -274,14 +282,15 @@ Every sound is synthesised with the Web Audio API. There are no audio files, and
 
 - **Music.** A 40 s loop in D minor: four chords of detuned sawtooth pads, a root drone, a high shimmer, and a sparse hummed melody, all in a 6 s reverb. It's rendered once in an `OfflineAudioContext` at 32 kHz and played by a looping `AudioBufferSourceNode`.
   - **Hums.** Each melody note, star chime and note of the reward chord is a hum (`hum()`): two sines a few cents apart, so they beat slowly, with quiet harmonics and no strike. In the melody, they swell up at the pad's own pitch.
-  - Everything still sounding after the 40 s (the last chord's release, the hums and the reverb) is added back onto the start of the buffer. That's what the next pass round the loop would hear, so the loop has no seam.
+  - Everything still sounding after the 40 s (the last chord's release, the hums and the reverb) is added back onto the start of the buffer. That's what the next pass round the loop would hear, so the loop has no seam. The source loops at 40 s (`loopEnd`), so the tail left in the buffer is never played.
+  - The loop is brought up to level by the gain it plays through, `0.9 / peak`, rather than by rescaling its samples. When the render finishes, the main thread only folds the tail in and finds the peak. Rescaling every sample, or copying them into a buffer of their own, held the game up for a moment on a phone.
   - The melody's timing comes from the music's own `mulberry32` seed, never the universe's stream.
 - **Ambience.** These layers run all the time and follow the game at 20 Hz:
   - wind: band-passed pink noise, brighter and louder with speed
   - rumble: low brown noise, heavier as you grow
   - tension: two low sawtooths a semitone apart, opening up and throbbing faster as `danger` rises. The music also backs off as `danger` rises.
 - **Feeding.** While `appetite` is up, you hear a swirl of band-passed noise with one of the `FEEDS` under it. Each star crossing your shadow also plays a short hum from the D minor pentatonic scale, D3 to D4. Chimes are rate-limited to one every 60–220 ms, louder when more stars land at once.
-  - The six feeding sounds are all built at startup and all keep running, but only the chosen one is turned up. Each one's `follow(feeding)` sets it from the feeding rate at 20 Hz. Gulps are events instead, fired from `update()`.
+  - Only the chosen feeding sound is built and running (`useFeed()`). Picking another fades the old one out, stops its sources and disconnects it, then builds the new one from `FEED_SOUNDS`. Keeping all six running, silent but the one you hear, used to cost the audio thread about a fifth of its work. Each one's `follow(feeding)` sets it from the feeding rate at 20 Hz. Gulps are events instead, fired from `update()`.
 
     | Key | Sound |
     |-----|-------|
@@ -305,6 +314,8 @@ Every sound is synthesised with the Web Audio API. There are no audio files, and
   | `distant` | Two other holes merge | A muffled thud, panned by the camera and quieter with distance |
 
   When you fall in, the horizon filter closes and the music's `playbackRate` drops to a quarter, so time seems to stall. `reset()` opens the filter again, restores the rate, and silences any effect that's still ringing.
+
+  Each effect plays through its own output from `shot(length, wet, pan, level)`. `shots` keeps it, so `reset()` can silence it, and `prune()` disconnects it every frame once `length` seconds are up. The reverb's tail carries on, since that lives in the convolver. **Give `shot()` the effect's true length.** Anything left plugged into the graph costs the audio thread a little on every block, even when it's silent, and a node that JavaScript still holds stays plugged in. Effects used to be cleared only on a retry, so over a long game they piled up into the hundreds: 300 of them tripled the audio thread's work, and 1,000 left it barely keeping up even on a fast desktop CPU. On a phone, the sound broke up. Chimes and gulps keep no hold on their nodes, so the browser drops those itself once their sources stop.
 - **Mute.** The settings menu's Sound tab has switches for Sound (the master mute, also **M**), Music and Effects (which covers the ambience too), and below them the Feeding choices (see [Settings](#settings-settingsjs)). Each setting is kept in `localStorage`. The master mute fades out and then suspends the context, so muted audio costs nothing; Music and Effects just zero their bus gains. The context is also suspended while the tab is hidden.
 
 ## Settings (`settings.js`)
@@ -341,4 +352,4 @@ Each core or rival you swallow makes a checkpoint due (`pending` in `game.js`). 
 
 ## Lifecycle
 
-`dispose()` removes the window listeners (keyboard, blur, resize), the pointer and tilt listeners, the audio's unlock and visibility listeners, the Start over button's timer, and the HUD, hints, joystick and settings menu elements. It stops the streamer's worker, closes the `AudioContext`, and disposes the post-processing passes, the composer, and every geometry, material and texture in the scene. It leaves the renderer, camera and controls alone, because the host owns them.
+`dispose()` removes the window listeners (keyboard, blur, resize), the pointer and tilt listeners, the audio's unlock and visibility listeners and its idle build, the Start over button's timer, and the HUD, hints, joystick and settings menu elements. It stops the streamer's worker, closes the `AudioContext`, and disposes the post-processing passes, the composer, and every geometry, material and texture in the scene. It leaves the renderer, camera and controls alone, because the host owns them.

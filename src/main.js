@@ -5,7 +5,9 @@ import './style.css';
 
 const { clamp } = THREE.MathUtils;
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// No antialiasing: the game draws everything into the post-processing chain's own buffers, which don't use it,
+// so it would only cost memory and bandwidth for the final full-screen copy.
+const renderer = new THREE.WebGLRenderer({ antialias: false });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.querySelector('#app').appendChild(renderer.domElement);
