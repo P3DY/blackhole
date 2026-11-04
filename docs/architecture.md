@@ -21,11 +21,12 @@ main.js ──► game.js ──┬─► config.js        constants (imported b
                       ├─► audio.js         createAudio (synthesised music, ambience, effects)
                       ├─► hud.js ──► hud.css
                       ├─► hints.js ──► hints.css   createHints (control lessons, slowed moments)
+                      ├─► save.js          createSaves (the last checkpoint in IndexedDB), fits
                       └─► utils.js         mulberry32, seedOf, createStarfield, disposeObject
 ```
 
-- **`main.js`** is the host. It creates the `WebGLRenderer`, the `PerspectiveCamera` (60° fov, near 0.1 and far 5000 to start, which the game scales as you grow; see [The frame](#the-frame)) and `OrbitControls` with damping. It calls `createGame()` and runs the loop, clamping each frame's delta to 0–0.1 s: a backgrounded tab doesn't jump forward, and the first frame, whose timestamp can come before the start time, doesn't run backward. In development it puts `{ renderer, camera, scene }` on `window.blackHole` for poking at from the console.
-- **`game.js`** holds `createGame({ renderer, camera, controls })`, a closure that owns all game state. It returns `{ scene, update, render, dispose }`. The rival AI, capture, movement and camera code live in it because they share that state.
+- **`main.js`** is the host. It creates the `WebGLRenderer`, the `PerspectiveCamera` (60° fov, near 0.1 and far 5000 to start, which the game scales as you grow; see [The frame](#the-frame)) and `OrbitControls` with damping. It calls `createGame()` and runs the loop, clamping each frame's delta to 0–0.1 s: a backgrounded tab doesn't jump forward, and the first frame, whose timestamp can come before the start time, doesn't run backward. In development it puts `{ renderer, camera, scene, debug }` on `window.blackHole` for poking at from the console. `debug` is for the smoke test (see [Checkpoints](#checkpoints)).
+- **`game.js`** holds `createGame({ renderer, camera, controls })`, a closure that owns all game state. It returns `{ scene, update, render, dispose }`, and `debug` in development. The rival AI, capture, movement and camera code live in it because they share that state.
 - Every other module is a factory or a set of pure helpers with no game state of its own. The factories keep only the state of what they make: the disk and jet pools, and the streamer's records of the cells around you (see [The endless universe](#the-endless-universe)).
 
 ## World layout
@@ -333,14 +334,16 @@ Every sound is synthesised with the Web Audio API. There are no audio files, and
 
 Each core or rival you swallow makes a checkpoint due (`pending` in `game.js`). Step 9 saves it in the first frame where you're alive, nothing heavier is within `CHECKPOINT.safe` (8) of its danger radii (`danger < 1 / safe²`), and no rival is hunting you. So a retry never drops you somewhere you can't get away from. If you're swallowed before it's saved, Retry goes back to the checkpoint before.
 
-- `saveCheckpoint()` copies everything that changes as you play:
+- `saveCheckpoint()` copies everything that changes as you play (`snapshot()`), names it after what you swallowed, and stores it (see below):
   - each of the opening's fields' alive flags (bit-packed with `pack()` from `stream.js`), remaining count and rotation
   - the streamer's deltas (`streamer.save()`, which first notes the state of every cell still built)
   - each black hole by key, with its slot, kind, name, starting mass, mass, sizes, state, eater (by key), fall progress, feeding, side of you, position, velocity and rival AI (its galaxy by key)
   - the disk pool (`disk.save()`, live particles only)
   - the stats, the places you've been named (`visited`), whether you've won, and the camera's offset and zoom
 
-  The opening's alive flags are most of it, about 77 KB. Only the last checkpoint is kept, in memory, so a reload loses it.
+  The opening's alive flags are most of it, about 77 KB. Only the last checkpoint is kept.
+- **It survives a reload.** `save.js` stores it in IndexedDB (database `black-hole`, store `saves`, key `checkpoint`) as `{ version, seed, checkpoint }`. A checkpoint is plain objects, typed arrays, a `Map` and `Vector3`s, so IndexedDB takes it as it is. The `Vector3`s come back as plain `{ x, y, z }`, which is all `restore()` reads. When the game starts, it loads the stored one, and if `fits()` (the same `SAVE_VERSION` and `UNIVERSE_SEED`, a field for each of the opening's with the right number of bits, and every part there), restores it and says "Carrying on ·" and its name where the checkpoint note goes. One that doesn't fit, or throws while being restored, is deleted (after a throw, the game resets). Nothing's restored if you've swallowed something or started over before the load comes back, nor in development with `?tier=N`. Start over deletes it. Without IndexedDB (some private windows), each call warns and settles, and checkpoints last until a reload as they used to. **Bump `SAVE_VERSION`** when a checkpoint's shape changes.
+- `npm run smoke` checks the round trip: it plays for a moment, saves a checkpoint through `window.blackHole.debug.save()`, reloads, and compares the checkpoint with the game straight after it was restored (`debug.resumed`, before a frame has passed), both summed up by `describe()` in `game.js`. Cores of cells that the streamer did or didn't build again don't count, since which cells are open depends on more than where you are.
 - `restore()` puts the opening's alive flags back and uploads them whole, like `reset()`. The black holes and cells then go back in this order:
   1. `streamer.load()` drops every record (freeing their cores) and takes the saved deltas.
   2. Every rival is removed and the saved ones are made again.

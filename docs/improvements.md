@@ -10,7 +10,7 @@ None known.
 
 ## Gameplay and UX
 
-- **Checkpoints don't survive a reload.** Growing to tier 28 is a long game. The last checkpoint could go to IndexedDB. The opening's alive flags are now bit-packed (about 77 KB), so a checkpoint is small; what's missing is serialising it (the holes' `Vector3`s, the streamer's `Map` of deltas) and loading it at startup.
+Nothing pending.
 
 ## Performance
 
@@ -32,12 +32,13 @@ None known.
 
 ## Tooling
 
-- **More tests.** `test/` covers the pure modules (balance rules, `queryGrid()`, `pack()` / `unpack()`, the disk pool, `cellAt()`). The checkpoint round trip lives in `game.js`'s closure, so it can only be checked through the smoke test for now. Exposing `saveCheckpoint()` / `restore()` from a dev build would let a test check that a restore gives back exactly what was saved.
+- **More tests.** `test/` covers the pure modules (balance rules, `queryGrid()`, `pack()` / `unpack()`, the disk pool, `cellAt()`, `fits()`), and the smoke test checks a checkpoint's round trip through a reload. A unit test of `restore()` itself would need `game.js`'s closure in a test without WebGL.
 
 ## Already done
 
 Since the review:
 
+- **Checkpoints survive a reload.** `save.js` keeps the last one in IndexedDB, and the game carries on from it when it starts. The smoke test saves one, reloads and checks that what comes back matches.
 - **Retry could freeze the game.** `removeHole()` now lets go of anything falling into the hole it removes, and `restore()` does the same for a hole saved falling into something that didn't come back. Checked by making one rival fall into another, removing the eater, then saving and retrying: no errors, and frames kept coming.
 - **Place names are part of checkpoints** (`visited`).
 - **R needs a hold while you're alive** (`RETRY_HOLD`), and a tap once you've been swallowed.

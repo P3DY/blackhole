@@ -62,7 +62,7 @@ There's no intro screen: the game starts straight away. Each control is shown as
 - Past the 16 galaxies of the opening, the universe goes on forever, a little bigger every ring outward: giant galaxies, then galaxy groups, clusters, superclusters and great walls. Each scale is named for real ones (the Coma Cluster, Laniakea, the Sloan Great Wall…), and the name of each place appears as you reach it. Things you've long outgrown fade away.
 - **Rivals** roam between galaxies and eat the same stars: seven in the opening, then new ones named for real quasars. They keep only 30% of what they eat, so you can outgrow them. Rivals hunt you while you're smaller (boosting outruns them) and flee once you're bigger.
 - **Hawking radiation** slowly shrinks you (0.3% of your mass per second), and boosting burns another 1.5% per second, so keep eating.
-- Every core or rival you swallow saves a **checkpoint**, as soon as nothing heavier is close and nothing is hunting you. If you're swallowed, **Retry** (or **R**) takes you back to it. Checkpoints last until you reload the page.
+- Every core or rival you swallow saves a **checkpoint**, as soon as nothing heavier is close and nothing is hunting you. If you're swallowed, **Retry** (or **R**) takes you back to it. The last checkpoint survives a reload, so the game carries on from it next time (Start over throws it away).
 - The HUD stays out of the way: your mass and feeding rate in the corner, and arrows at the screen edge toward the nearest black holes when they're out of view (blue: you outweigh it, red: it outweighs you). Apart from those hints and a brief note when a checkpoint is saved, there are no pop-up messages during play.
 - You win when you outweigh all the matter in the observable universe, about 10²³ suns. You can keep drifting after that.
 
@@ -94,10 +94,12 @@ src/
   audio.js          synthesised music loop, ambience and sound effects
   hud.js / hud.css  DOM overlay: mass readout, edge arrows, vignette, checkpoint note, end card, Game tab
   hints.js / .css   control lessons as looping gestures, and the slowed moments that explain weight
+  save.js           keeps the last checkpoint in IndexedDB, so a reload carries on from it
   style.css         page base styles
   utils.js          seeded random and seed mixing, backdrop starfield, GPU disposal helper
-test/               Vitest unit tests: balance rules, the spatial grid, bit-packing, the disk pool, the cells
-scripts/smoke.js    headless smoke test: plays the game at a few scales in Chromium and fails on any page error
+test/               Vitest unit tests: balance rules, the spatial grid, bit-packing, the disk pool, the cells, saves
+scripts/smoke.js    headless smoke test: plays the game at a few scales in Chromium and fails on any page error,
+                    then checks a checkpoint comes back the same after a reload
 docs/
   gameplay.md       rules, scaling, the scales past the opening, rival AI
   architecture.md   frame loop, the endless universe, rendering pipeline, data structures, performance

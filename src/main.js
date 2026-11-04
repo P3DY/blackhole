@@ -30,8 +30,9 @@ controls.enableDamping = true;
 
 const game = createGame({ renderer, camera, controls });
 
-// For poking at from the console while developing (renderer.info, the scene's fields, the camera).
-if (import.meta.env.DEV) window.blackHole = { renderer, camera, scene: game.scene };
+// For poking at from the console while developing (renderer.info, the scene's fields, the camera), and for the
+// smoke test (`debug`, see game.js).
+if (import.meta.env.DEV) window.blackHole = { renderer, camera, scene: game.scene, debug: game.debug };
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
