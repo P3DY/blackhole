@@ -1,4 +1,4 @@
-import { EINSTEIN, MAX_LENSES, MAX_WARPS, WARP } from './config.js';
+import { EINSTEIN, MAX_HOLES, MAX_LENSES, MAX_WARPS, WARP } from './config.js';
 
 const glsl = (value) => value.toFixed(4);
 
@@ -77,14 +77,16 @@ export const fieldVertexShader = /* glsl */ `
 // Accretion disks. Positions are in world space, simulated on the CPU. Each particle knows which black hole it orbits.
 export const diskVertexShader = /* glsl */ `
   uniform float uSize;
+  uniform vec4 uHoles[${MAX_HOLES}]; // by slot · xyz: a black hole · w: its shadow radius
 
   attribute vec3 aColor;
   attribute float aScale;
-  attribute vec4 aHole; // xyz: the black hole this particle orbits · w: its shadow radius
+  attribute float aSlot; // the slot of the black hole this particle orbits
 
   varying vec3 vColor;
 
   void main() {
+    vec4 aHole = uHoles[int(aSlot + 0.5)];
     vec3 rel = position - aHole.xyz;
     float r = length(rel.xz);
 

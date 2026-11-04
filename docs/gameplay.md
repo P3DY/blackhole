@@ -16,7 +16,7 @@ Every core or rival you swallow saves a checkpoint, as soon as it's safe: nothin
 
 - **Retry** goes back to the last checkpoint: every star, black hole, accretion disk and stat as it was then. **R** does the same, as does Retry on the game-over card or in the Game tab of the settings menu. While you're alive, R has to be held for `RETRY_HOLD` (0.8 s), with a bar in the middle of the screen filling up, so a stray press next to WASD can't throw the run away. Once you've been swallowed, a press does it. With no checkpoint yet, it starts from the beginning.
 - **Start over** goes back to the beginning and throws the checkpoint away. In the settings menu it asks for a second press.
-- Only the last checkpoint is kept, and only until you reload the page.
+- Only the last checkpoint is kept. It survives a reload: the game carries on from it, with "Carrying on ·" and its name under your mass. Start over throws it away.
 - What you changed in the endless universe is kept too, even in places you've left far behind: a retry finds the stars you'd eaten there still gone, and the cores you'd swallowed still missing.
 
 ## Mass, shadow and reach

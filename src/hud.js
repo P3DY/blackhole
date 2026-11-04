@@ -252,10 +252,10 @@ export function createHud({ settings, onRetry, onStartOver }) {
       startOver.note.textContent = checkpoint ? 'Back to the beginning. Your checkpoint is lost.' : 'Back to the beginning.';
     },
 
-    // A checkpoint has just been saved: say so, briefly.
-    noteCheckpoint(checkpoint) {
+    // A checkpoint has just been saved (or, with another `label`, picked up again after a reload): say so, briefly.
+    noteCheckpoint(checkpoint, label = 'Checkpoint') {
       hud.setCheckpoint(checkpoint);
-      saved.textContent = `Checkpoint · ${checkpoint.name}`;
+      saved.textContent = `${label} · ${checkpoint.name}`;
       saved.classList.remove('show');
       void saved.offsetWidth; // restart the animation if the last note is still showing
       saved.classList.add('show');

@@ -10,7 +10,9 @@ None known.
 
 ## Gameplay and UX
 
-- **Checkpoints don't survive a reload.** Growing to tier 28 is a long game. The last checkpoint could go to IndexedDB. The opening's alive flags are now bit-packed (about 77 KB), so a checkpoint is small; what's missing is serialising it (the holes' `Vector3`s, the streamer's `Map` of deltas) and loading it at startup.
+- **Lessons start again on a reload, though the run doesn't.** Since checkpoints survive a reload, a returning player carries on mid-run but is taught steering and boosting again, slowed moments and all. `hints.js` keeps its progress (`current`, and which slowed moments have been shown) only in memory. Remembering it with the `readChoice` / `writeChoice` helpers in `settings.js` would fix it; Start over should keep it, as it does now.
+- **What you did since the last checkpoint is lost on a reload.** Only checkpoints are stored, and one is saved only after you swallow a core or a rival. Saving one on `pagehide` (when it would be safe, by the same rule as step 10 of the frame in `docs/architecture.md`) would keep more of a run, but a write that late isn't guaranteed to finish, so it's a bonus rather than a promise.
+- **No reduced-motion mode.** Only the loading screen honours `prefers-reduced-motion`. The hints' looping gestures (`hints.css`), the rings' flares on a change of side and the slowed moments could calm down or stop for those who ask.
 
 ## Performance
 
@@ -22,21 +24,28 @@ None known.
 
 ### CPU and memory
 
-- **Disk uploads** (`src/disk.js`). Colors and scales are now uploaded only when particles come or go, but positions and `aHole` (each particle's black hole centre and shadow) still go up every frame. `aHole` could become a uniform array of 128 `vec4`s indexed by slot, with the slot as a byte attribute, which would leave only positions to upload each frame.
 - **The opening's fields stay in GPU memory** for good, hidden once you outgrow them. Freeing their buffers after they fade, and rebuilding them on Start over or a Retry back into the opening, would save memory late in the game. `reset()` relies on them staying, so this is a bigger change.
 
 ## Robustness
 
+- **A saved checkpoint only checks the opening's shape.** `fits()` in `save.js` turns away a save from another `SAVE_VERSION`, another seed, or an opening whose fields have other star counts. But a change to `cosmos.js` or the constants that size the cells' fields would let an old save's cell deltas unpack onto different stars without complaint (`unpack()` doesn't check lengths). Storing each delta's star count beside its bits and skipping any that don't match in the streamer's `fill()`, or storing a fingerprint of the constants that shape the universe, would close it. Until then, bump `SAVE_VERSION` with any such change.
 - **Embedding only works full-window.** `game.js` now follows the renderer's own size and pixel ratio, but `hud.js` (`placeMarker`), `hints.js` (`pin`) and `pointer.js` still use `window.innerWidth` and `innerHeight` and the pointer's client coordinates, and their overlays are fixed to the window. Use the canvas's bounding rect there to embed the game in part of a page. The README says it only works full-window for now.
 
 ## Tooling
 
-- **More tests.** `test/` covers the pure modules (balance rules, `queryGrid()`, `pack()` / `unpack()`, the disk pool, `cellAt()`). The checkpoint round trip lives in `game.js`'s closure, so it can only be checked through the smoke test for now. Exposing `saveCheckpoint()` / `restore()` from a dev build would let a test check that a restore gives back exactly what was saved.
+- **Test the fallbacks in the smoke test.** The opening's worker failing (so it's built on the main thread) and IndexedDB being unavailable were checked by hand. The smoke test could block `builder-*.js` with `page.route()` for one pass, and delete `indexedDB` in an init script for another, and check the game still starts with only warnings.
+- **A dev-only profiler.** Timing `update()` section by section meant patching `game.js` by hand (see [How it was measured](#how-it-was-measured)). A `?profile` switch in development, timing the same sections into `window.blackHole`, would make it repeatable.
+- **More tests.** `test/` covers the pure modules (balance rules, `queryGrid()`, `pack()` / `unpack()`, the disk pool, `cellAt()`, `fits()`), and the smoke test checks a checkpoint's round trip through a reload. A unit test of `restore()` itself would need `game.js`'s closure in a test without WebGL.
 
 ## Already done
 
 Since the review:
 
+- **A faster `update()`.** The disk's shader looks each particle's black hole up in a uniform array by slot (`uHoles`, `aSlot`), so only positions are uploaded each frame, and its loop uses `Math.sqrt` instead of `Math.hypot` and `**`. `queryGrid()` no longer makes arrays as it walks. With the CPU throttled 4× at tier 8, `disk.update()` went from 0.9 / 4.9 / 8.0 ms (median / p95 / p99) to 0.4 / 2.5 / 4.8 ms, and the whole of `update()` from 14.4 / 19.9 ms to 9.5 / 13.2 ms at the 95th / 99th percentile.
+- **Chimes and gulps are disconnected once they end**, like the other effects. Chrome drops unreferenced nodes only when it collects garbage, and until then they kept costing the audio thread.
+- **The resolution adapts to the frame rate** (`pacer.js`, on by default in the Video tab): it drops a step at a time while the game runs under about 50 fps, keeps a step only if it helped, and climbs back when there's room. Its thresholds haven't been tried on a real phone yet.
+- **Loading.** The opening's stars are built in the worker, behind a loading screen, so the page no longer freezes for 2 s (4× throttled) while it loads. The longest task left is 0.5–0.7 s.
+- **Checkpoints survive a reload.** `save.js` keeps the last one in IndexedDB, and the game carries on from it when it starts. The smoke test saves one, reloads and checks that what comes back matches.
 - **Retry could freeze the game.** `removeHole()` now lets go of anything falling into the hole it removes, and `restore()` does the same for a hole saved falling into something that didn't come back. Checked by making one rival fall into another, removing the eater, then saving and retrying: no errors, and frames kept coming.
 - **Place names are part of checkpoints** (`visited`).
 - **R needs a hold while you're alive** (`RETRY_HOLD`), and a tap once you've been swallowed.
@@ -66,6 +75,8 @@ These looked like possible causes of stutter, but weren't:
 - **Checkpoint saves** take 5–17 ms with the CPU throttled 4×, a dropped frame at most.
 - **Streaming cells** past the opening caused no spikes in `update()` while flying through new cells at tier 10.
 - **The hints' CSS animations** (some animate `box-shadow`, which repaints) only run while a lesson is showing.
+- **Storing a checkpoint in IndexedDB** takes 19–94 ms from start to stored with the CPU throttled 4×, at tiers 0 and 8, but nearly all of it is waiting on the database: no main-thread task over 50 ms.
+- **Garbage collection** isn't behind the big spikes in `update()` it first looked like. Those were the resolution scaler resizing and the end card being built.
 
 ## How it was measured
 
@@ -75,4 +86,6 @@ All of it ran headless, with Playwright and the Chromium that comes with it. Tha
 - **Long tasks:** a `PerformanceObserver` for `longtask`, together with a CPU profile (`Profiler.start` / `Profiler.stop`). To tell what each task was, the profile's clock was lined up with `performance.now()` by spinning in a uniquely named function at a known time. Then the samples inside each task were tallied by the innermost function from `src/`.
 - **Shader compiles:** `renderer.info.programs.length` each frame, and `renderer.properties.get(material).currentProgram` for each object, from `window.blackHole` in a dev build.
 - **The audio thread's work:** an init script replaced `window.AudioContext` with a subclass of `OfflineAudioContext` (20 s at 48 kHz). The game built its graph as usual, the render loop was stopped, and `startRendering()` was timed. With the CPU to itself, 20 s of the old graph took about 1.65 s to render and the new one about 0.96 s. Adding 300 leftover effect outputs made the old graph take 4.6 s.
+- **`update()` section by section:** a temporary patch to `game.js` read `performance.now()` between the steps of the frame (AI and movement, streaming, fields, capture, disk, jets, rings, camera and lenses, HUD, hints, audio) and kept each frame's times, with the Video tab's adapting turned off (`localStorage['black-hole:no-adapt'] = '1'`). Playwright held W, turned and boosted for 90 s at each tier, after a 10 s warm-up at 4× so the audio and the first cells were ready. Then median, 95th and 99th percentiles per section, and each section's share of the slowest 5% of frames.
+- **Leftover audio nodes:** an `OfflineAudioContext` rendering 20 s with a reverb and five chimes a second, plus 1,000 chimes that rang in the first second and were then left connected, disconnected, or left with nothing holding them (with and without a forced collection, `--js-flags=--expose-gc`). Keep the nodes out of any array in the unpruned case, or you're measuring held nodes.
 - **Autoplay:** Playwright's Chromium allows autoplay by default. Pass `ignoreDefaultArgs: ['--autoplay-policy=no-user-gesture-required']` to see the context wait for the first input, and watch the console for Chrome's "The AudioContext was not allowed to start" warnings.
