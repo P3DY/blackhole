@@ -132,7 +132,7 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 
 ### Accretion disks (`diskVertexShader`)
 
-- Positions are world-space and come from the CPU. `aHole` carries each particle's black hole center and shadow radius, so a single draw call can shade every disk.
+- Positions are world-space and come from the CPU. `aSlot` (the `owners` bytes) says which black hole each particle orbits, and the shader looks up its centre and shadow radius in `uHoles`, a uniform `vec4` for each of the `MAX_HOLES` slots that `disk.update()` fills from `slots` every frame. So a single draw call can shade every disk.
 - **Heat:** the particle's own color shifts through orange and white to blue-white as it nears the shadow.
 - **Beaming:** the side orbiting toward the camera is brighter.
 
@@ -164,7 +164,7 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 ### Disk pool (`disk.js`)
 
 - One pool of `DISK_CAPACITY` (32,768) particles is shared by every black hole. The arrays are stored per attribute, and each particle carries an `owners[i]` slot.
-- Live particles are **kept packed** at the front. Absorbing one swaps the last particle into its slot. Only `[0, count)` is drawn (`setDrawRange`) and uploaded (`addUpdateRange`). Positions and `aHole` are uploaded every frame; colors and scales only when particles have been added, removed or loaded.
+- Live particles are **kept packed** at the front. Absorbing one swaps the last particle into its slot. Only `[0, count)` is drawn (`setDrawRange`) and uploaded (`addUpdateRange`). Only positions are uploaded every frame; colors, scales and slots (`aSlot`) only when particles have been added, removed, loaded or handed to another black hole. The loop uses `Math.sqrt` rather than `Math.hypot` and `**`, which are several times slower in V8.
 - Orbits are applied as an **exact rotation** of `ORBIT_SPEED · (S/r)^1.5 · Δt` plus inflow, so tight orbits don't drift outward the way Euler steps would. A newly captured star keeps the difference between its own velocity and the flow as a drift, which decays at `SETTLE`. That way it eases into orbit instead of snapping.
 - When a hole is swallowed, `transfer(from, to)` reassigns its particles to the eater. When a slot is freed, `release(slot)` drops whatever particles still name it.
 - `load(saved, remap)` puts a checkpoint's particles back, moving each to the slot its black hole has now (`remap`) and dropping those whose black hole is gone.
@@ -323,7 +323,7 @@ Every sound is synthesised with the Web Audio API. There are no audio files, and
 
   When you fall in, the horizon filter closes and the music's `playbackRate` drops to a quarter, so time seems to stall. `reset()` opens the filter again, restores the rate, and silences any effect that's still ringing.
 
-  Each effect plays through its own output from `shot(length, wet, pan, level)`. `shots` keeps it, so `reset()` can silence it, and `prune()` disconnects it every frame once `length` seconds are up. The reverb's tail carries on, since that lives in the convolver. **Give `shot()` the effect's true length.** Anything left plugged into the graph costs the audio thread a little on every block, even when it's silent, and a node that JavaScript still holds stays plugged in. Effects used to be cleared only on a retry, so over a long game they piled up into the hundreds: 300 of them tripled the audio thread's work, and 1,000 left it barely keeping up even on a fast desktop CPU. On a phone, the sound broke up. Chimes and gulps keep no hold on their nodes, so the browser drops those itself once their sources stop.
+  Each effect plays through its own output from `shot(length, wet, pan, level)`. `shots` keeps it, so `reset()` can silence it, and `prune()` disconnects it every frame once `length` seconds are up. The reverb's tail carries on, since that lives in the convolver. **Give `shot()` the effect's true length.** Anything left plugged into the graph costs the audio thread a little on every block, even when it's silent, and a node that JavaScript still holds stays plugged in. Effects used to be cleared only on a retry, so over a long game they piled up into the hundreds: 300 of them tripled the audio thread's work, and 1,000 left it barely keeping up even on a fast desktop CPU. On a phone, the sound broke up. Chimes and gulps go into `shots` too. Chrome would drop them once nothing holds them and their sources have stopped, but only when it next collects garbage, which this game makes rare. Until then they cost as much as if they were held: rendering 20 s offline with 1,000 finished, unreferenced chimes took 19–23 s without a collection, against 11 s with them disconnected.
 - **Mute.** The settings menu's Sound tab has switches for Sound (the master mute, also **M**), Music and Effects (which covers the ambience too), and below them the Feeding choices (see [Settings](#settings-settingsjs)). Each setting is kept in `localStorage`. The master mute fades out and then suspends the context, so muted audio costs nothing; Music and Effects just zero their bus gains. The context is also suspended while the tab is hidden.
 
 ## Settings (`settings.js`)

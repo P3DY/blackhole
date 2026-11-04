@@ -17,11 +17,10 @@ Nothing pending.
 ### Phones
 
 - **A shorter reverb.** The live reverb's 4 s impulse is now about a third of the audio thread's work. A 3 s one would save about a fifth of the total, at the cost of an audibly shorter tail. A mono reverb (`channelCount: 1`) measured slower in Chrome, not faster.
-- **`update()` on a slow CPU.** With the CPU throttled 4×, `update()` took 4–6.5 ms at the median but 12–17 ms at the 95th percentile and 18–31 ms at the 99th, a frame's whole budget at 60 Hz. The software renderer was competing for the same cores, so these are pessimistic. Profiling on a real phone (Chrome remote debugging) would show whether it matters. `disk.update()` and the capture queries are where to look.
+- **`update()` on a slow CPU.** Timed section by section with the CPU throttled 4× (90 s each, steering and boosting, with the resolution fixed), `update()` now takes 2–4 ms at the median, 6–10 ms at the 95th percentile and 11–13 ms at the 99th, at tiers 0 and 8. The slowest frames are spread over the capture queries, `disk.update()` and the audio (mostly `chime()` making its nodes, 5–10 ms each), with no single culprit left. Next steps, if a real phone (Chrome remote debugging) shows it still matters: let the capture queries skip grid cells whose stars are all eaten (a live count per cell, which `reset()`, `restore()` and the streamer's `fill()` would have to recount), and reuse chime voices instead of making new nodes. Two hitches are known and left alone: getting swallowed (the end card and its sound, about 65 ms at 4×), and each change the resolution scaler makes (the canvas and every buffer are remade, 100–240 ms at 4× in headless Chromium).
 
 ### CPU and memory
 
-- **Disk uploads** (`src/disk.js`). Colors and scales are now uploaded only when particles come or go, but positions and `aHole` (each particle's black hole centre and shadow) still go up every frame. `aHole` could become a uniform array of 128 `vec4`s indexed by slot, with the slot as a byte attribute, which would leave only positions to upload each frame.
 - **The opening's fields stay in GPU memory** for good, hidden once you outgrow them. Freeing their buffers after they fade, and rebuilding them on Start over or a Retry back into the opening, would save memory late in the game. `reset()` relies on them staying, so this is a bigger change.
 
 ## Robustness
@@ -36,6 +35,8 @@ Nothing pending.
 
 Since the review:
 
+- **A faster `update()`.** The disk's shader looks each particle's black hole up in a uniform array by slot (`uHoles`, `aSlot`), so only positions are uploaded each frame, and its loop uses `Math.sqrt` instead of `Math.hypot` and `**`. `queryGrid()` no longer makes arrays as it walks. With the CPU throttled 4× at tier 8, `disk.update()` went from 0.9 / 4.9 / 8.0 ms (median / p95 / p99) to 0.4 / 2.5 / 4.8 ms, and the whole of `update()` from 14.4 / 19.9 ms to 9.5 / 13.2 ms at the 95th / 99th percentile.
+- **Chimes and gulps are disconnected once they end**, like the other effects. Chrome drops unreferenced nodes only when it collects garbage, and until then they kept costing the audio thread.
 - **The resolution adapts to the frame rate** (`pacer.js`, on by default in the Video tab): it drops a step at a time while the game runs under about 50 fps, keeps a step only if it helped, and climbs back when there's room. Its thresholds haven't been tried on a real phone yet.
 - **Loading.** The opening's stars are built in the worker, behind a loading screen, so the page no longer freezes for 2 s (4× throttled) while it loads. The longest task left is 0.5–0.7 s.
 - **Checkpoints survive a reload.** `save.js` keeps the last one in IndexedDB, and the game carries on from it when it starts. The smoke test saves one, reloads and checks that what comes back matches.

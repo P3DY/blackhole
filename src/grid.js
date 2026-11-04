@@ -66,11 +66,13 @@ export function queryGrid(field, hx, hz, radius, visit) {
     return true;
   };
 
+  // Walks the ring's rows and columns without making arrays, since this runs for every roamer and field, every frame.
   for (let ring = firstRing; ring <= lastRing; ring++) {
     // Top and bottom rows of the ring…
     const x0 = Math.max(cx - ring, 0);
     const x1 = Math.min(cx + ring, last);
-    for (const z of ring === 0 ? [cz] : [cz - ring, cz + ring]) {
+    for (let side = ring === 0 ? 1 : 0; side < 2; side++) {
+      const z = side === 0 ? cz - ring : cz + ring;
       if (z < 0 || z > last) continue;
       for (let x = x0; x <= x1; x++) if (!visitCell(x, z)) return;
     }
@@ -78,7 +80,8 @@ export function queryGrid(field, hx, hz, radius, visit) {
     if (ring === 0) continue;
     const z0 = Math.max(cz - ring + 1, 0);
     const z1 = Math.min(cz + ring - 1, last);
-    for (const x of [cx - ring, cx + ring]) {
+    for (let side = 0; side < 2; side++) {
+      const x = side === 0 ? cx - ring : cx + ring;
       if (x < 0 || x > last) continue;
       for (let z = z0; z <= z1; z++) if (!visitCell(x, z)) return;
     }

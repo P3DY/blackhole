@@ -51,7 +51,7 @@ These docs quote numbers derived from `config.js` (tier tables, rival masses, st
 - **Capacity limits:**
   - `MAX_WARPS` (8) caps how many roamers can warp *and capture* stars, so new rivals only appear while fewer than 7 are about.
   - `MAX_LENSES` (32) caps how many holes get drawn by the lens pass. Past the opening there can be more, and the biggest on screen win.
-  - `MAX_HOLES` (128) caps the slots. `test/config.test.js` checks this and the balance rules below. `disk.js` stores owners in a `Uint8Array`, so it can't go past 256.
+  - `MAX_HOLES` (128) caps the slots. `test/config.test.js` checks this and the balance rules below. `disk.js` stores owners in a `Uint8Array`, so it can't go past 256, and the disk shader has a uniform `vec4` per slot (`uHoles`), which has to fit in WebGL 2's 256 vertex uniform vectors alongside the rest.
   - If you add rivals, galaxies or cells, check these first (see `docs/tuning.md`).
 - **Balance rules:**
   - `1 + STARS_MASS + CORE_MASS` should stay close to `TIER_GROWTH³`.

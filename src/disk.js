@@ -9,21 +9,23 @@ export function createDisk(material) {
   const positions = new Float32Array(capacity * 3);
   const colors = new Float32Array(capacity * 3);
   const scales = new Float32Array(capacity);
-  const holeData = new Float32Array(capacity * 4); // for the shader: center and shadow radius of its black hole
   const velocities = new Float32Array(capacity * 3);
   const masses = new Float32Array(capacity);
-  const owners = new Uint8Array(capacity); // so at most 256 black hole slots
+  const owners = new Uint8Array(capacity); // so at most 256 black hole slots; the shader reads it as aSlot
 
   const geometry = new THREE.BufferGeometry();
-  // Positions and black holes move every frame. Colors and scales only change as particles come and go, so
-  // they're uploaded only then.
-  const moving = [new THREE.BufferAttribute(positions, 3), new THREE.BufferAttribute(holeData, 4)];
-  const settled = [new THREE.BufferAttribute(colors, 3), new THREE.BufferAttribute(scales, 1)];
-  geometry.setAttribute('position', moving[0].setUsage(THREE.DynamicDrawUsage));
-  geometry.setAttribute('aHole', moving[1].setUsage(THREE.DynamicDrawUsage));
+  // Positions move every frame. Colors, scales and slots only change as particles come, go or change hands, so
+  // they're uploaded only then. Where each slot's black hole is, and its shadow, is a uniform array (uHoles),
+  // rather than repeated for every particle.
+  const moving = new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage);
+  const settled = [new THREE.BufferAttribute(colors, 3), new THREE.BufferAttribute(scales, 1), new THREE.BufferAttribute(owners, 1)];
+  geometry.setAttribute('position', moving);
   geometry.setAttribute('aColor', settled[0].setUsage(THREE.DynamicDrawUsage));
   geometry.setAttribute('aScale', settled[1].setUsage(THREE.DynamicDrawUsage));
-  let changed = false; // whether colors or scales have changed since they were last uploaded
+  geometry.setAttribute('aSlot', settled[2].setUsage(THREE.DynamicDrawUsage));
+  let changed = false; // whether colors, scales or slots have changed since they were last uploaded
+  const holes = Array.from({ length: MAX_HOLES }, () => new THREE.Vector4());
+  if (material.uniforms) material.uniforms.uHoles = { value: holes };
   geometry.setDrawRange(0, 0);
 
   const points = new THREE.Points(geometry, material);
@@ -71,6 +73,10 @@ export function createDisk(material) {
       const flatten = Math.exp(-3 * delta);
       absorbed.mass.fill(0);
       absorbed.count.fill(0);
+      for (let slot = 0; slot < MAX_HOLES; slot++) {
+        const hole = slots[slot];
+        if (hole) holes[slot].set(hole.position.x, hole.position.y, hole.position.z, Math.max(hole.size, 1e-4));
+      }
       let i = 0;
 
       while (i < disk.count) {
@@ -82,7 +88,7 @@ export function createDisk(material) {
         // Relative to where the black hole was last frame.
         const rx = positions[k] - center.x + hole.velocity.x * delta;
         const rz = positions[k + 2] - center.z + hole.velocity.z * delta;
-        const r = Math.hypot(rx, rz);
+        const r = Math.sqrt(rx * rx + rz * rz); // Math.hypot is several times slower in V8
 
         if (r < shadow) {
           absorbed.mass[owners[i]] += masses[i];
@@ -93,7 +99,8 @@ export function createDisk(material) {
 
         // Kepler-like orbit (faster further in) applied as an exact rotation, so tight orbits don't
         // drift outward the way stepping a velocity would, plus a steady inflow.
-        const turn = ORBIT_SPEED * (shadow / r) ** 1.5 * delta;
+        const near = shadow / r;
+        const turn = ORBIT_SPEED * near * Math.sqrt(near) * delta;
         const cos = Math.cos(turn);
         const sin = Math.sin(turn);
         const inward = Math.max(0, r - (INFLOW * r + INFLOW_MIN * shadow) * delta) / r;
@@ -104,17 +111,12 @@ export function createDisk(material) {
         velocities[k] *= fade;
         velocities[k + 1] *= fade;
         velocities[k + 2] *= fade;
-
-        holeData[i * 4] = center.x;
-        holeData[i * 4 + 1] = center.y;
-        holeData[i * 4 + 2] = center.z;
-        holeData[i * 4 + 3] = shadow;
         i++;
       }
 
       geometry.setDrawRange(0, disk.count);
       if (disk.count > 0) {
-        for (const attribute of changed ? [...moving, ...settled] : moving) {
+        for (const attribute of changed ? [moving, ...settled] : [moving]) {
           attribute.clearUpdateRanges();
           attribute.addUpdateRange(0, disk.count * attribute.itemSize);
           attribute.needsUpdate = true;
@@ -127,6 +129,7 @@ export function createDisk(material) {
     // Hands one black hole's disk to another, when the first is swallowed.
     transfer(from, to) {
       for (let i = 0; i < disk.count; i++) if (owners[i] === from) owners[i] = to;
+      changed = true;
     },
 
     // Drops one black hole's disk, when its slot is about to be reused.
