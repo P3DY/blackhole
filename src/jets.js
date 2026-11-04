@@ -22,7 +22,10 @@ export function createJets(material) {
   const points = new THREE.Points(geometry, material);
   points.frustumCulled = false;
 
-  let next = 0; // ring buffer: new particles overwrite the oldest
+  // A ring buffer: new particles overwrite the oldest. Every particle lives as long, so they die in the order they
+  // were made, and the live ones are the `live` before `next` (wrapping around).
+  let next = 0;
+  let live = 0;
 
   return {
     points,
@@ -45,25 +48,41 @@ export function createJets(material) {
         velocities[i * 3 + 2] = (Math.random() - 0.5) * shadow;
         scales[i] = (shadow / SHADOW_SIZE) * (0.5 + Math.random() * 0.7);
         lives[i] = 1;
+        live = Math.min(live + 1, capacity);
       }
     },
 
+    // Moves the live particles, and uploads only their stretch of the buffers (two stretches if it wraps).
     update(delta) {
-      let live = 0;
-      for (let i = 0; i < capacity; i++) {
-        if (lives[i] <= 0) continue;
+      const first = (next - live + capacity) % capacity;
+      for (let n = 0; n < live; n++) {
+        const i = (first + n) % capacity;
         lives[i] = Math.max(0, lives[i] - delta / JET_LIFE);
         positions[i * 3] += velocities[i * 3] * delta;
         positions[i * 3 + 1] += velocities[i * 3 + 1] * delta;
         positions[i * 3 + 2] += velocities[i * 3 + 2] * delta;
-        live++;
       }
       points.visible = live > 0;
-      if (live > 0) for (const attribute of attributes) attribute.needsUpdate = true;
+      if (live === 0) return;
+      // Uploaded with the ones that have just died, so the GPU sees them at zero life, which draws nothing.
+      for (const attribute of attributes) {
+        const size = attribute.itemSize;
+        attribute.clearUpdateRanges();
+        if (first + live <= capacity) attribute.addUpdateRange(first * size, live * size);
+        else {
+          attribute.addUpdateRange(first * size, (capacity - first) * size);
+          attribute.addUpdateRange(0, (first + live - capacity) * size);
+        }
+        attribute.needsUpdate = true;
+      }
+      // Then the oldest that have died drop off the live stretch.
+      while (live > 0 && lives[(next - live + capacity) % capacity] <= 0) live--;
     },
 
     clear() {
+      live = 0;
       lives.fill(0);
+      attributes[2].clearUpdateRanges();
       attributes[2].needsUpdate = true;
       points.visible = false;
     },

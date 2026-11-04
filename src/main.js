@@ -6,8 +6,19 @@ import './style.css';
 const { clamp } = THREE.MathUtils;
 
 // No antialiasing: the game draws everything into the post-processing chain's own buffers, which don't use it,
-// so it would only cost memory and bandwidth for the final full-screen copy.
-const renderer = new THREE.WebGLRenderer({ antialias: false });
+// so it would only cost memory and bandwidth for the final full-screen copy. three.js needs WebGL 2, and without
+// it the page would otherwise stay blank. The Video tab sets the pixel ratio from here on.
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: false });
+} catch (error) {
+  const message = document.createElement('div');
+  message.className = 'no-webgl';
+  message.innerHTML =
+    '<h1>Black Hole</h1><p>This game needs WebGL 2, which this browser can’t give it. It may be turned off, or the graphics driver may be blocked. An up-to-date Chrome, Firefox, Edge or Safari should run it.</p>';
+  document.querySelector('#app').append(message);
+  throw error;
+}
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.querySelector('#app').appendChild(renderer.domElement);

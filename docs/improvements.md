@@ -1,86 +1,55 @@
 # Improvements
 
-Known bugs and suggested improvements that haven't been made yet, from a review of the code and an investigation into stuttering on mid-range phones. They're roughly in order of priority within each section. Line numbers are as of commit `17f596f`; the function names are the safer guide.
+Known bugs and suggested improvements that haven't been made yet, from a review of the code and an investigation into stuttering on mid-range phones. They're roughly in order of priority within each section. Function names are a safer guide than line numbers, which drift.
 
 When you fix one, take it out of this list, and update the other docs if it changes what they describe.
 
 ## Bugs
 
-### Retry can freeze the game
-
-`removeHole()` (`src/game.js:201`) frees a black hole's slot but does nothing about holes that are still falling into it. Two callers remove holes far from you, which is exactly where nobody is watching a rival mid-meal:
-
-- `letGoOfRivals()` (`game.js:579`) removes rivals you've outgrown or left far behind. Rivals capture lighter rivals within their reach, so the one being let go can be in the middle of eating another.
-- The streamer's `onDrop` (`game.js:267`) removes a dropped cell's core, which a rival can be falling into.
-
-What follows:
-
-1. The victim never finishes falling. `sink()` (`game.js:748`) swallows it once it's within 0.6 × its eater's size, and `removeHole()` set that size to 0. It spirals toward the gone eater forever.
-2. It stays in `roamers`, so it permanently takes one of the 7 rival places (new rivals only appear while `roamers.length < MAX_WARPS`). `letGoOfRivals()` skips it because it isn't `alive`.
-3. If a checkpoint is saved while it exists, `restore()` can't find its eater by key. It sets `eater = null` (`game.js:514`) but leaves the state as `'falling'`, so `game.js:958` (`hole.eater.position`) throws on every frame. The game freezes, and only a reload gets out.
-
-It's rare in play, because a fall lasts about a second, but the result is a dead game. It was reproduced by exposing `fall`, `removeHole`, `saveCheckpoint` and `retry` from a dev build, making one rival fall into another, removing the eater, then saving and retrying: `Cannot read properties of null (reading 'position')` on every frame, and no frame rendered after it.
-
-A fix, about five lines:
-
-- In `removeHole()`, let go of whatever is falling into the hole: `for (const other of holes) if (other.eater === hole && other.state === 'falling') Object.assign(other, { state: 'alive', eater: null });`. Its size comes back the next frame, and it carries on as an ordinary rival.
-- In `restore()`, do the same for a falling hole whose eater wasn't found, so a checkpoint saved before the fix can't freeze the game either.
-
-Don't remove the falling holes along with their eater instead. `reset()` and `restore()` remove every rival from a copy of `roamers`, so a rival removed early would be removed again, and `holes.splice(holes.indexOf(hole), 1)` with an index of -1 drops the wrong hole. The player can also be the one falling, if you press R mid-fall.
-
-### Place names aren't part of checkpoints
-
-`visited` (`game.js:282`), the galaxies and structures whose names you've been shown this run, is cleared by `reset()` but neither saved nor restored by checkpoints. After a Retry, places you reached after the checkpoint don't announce themselves again, while the scale titles do (their `stats.band` is restored). CLAUDE.md asks for state that changes during play to go in the checkpoint. Save a copy of `visited` with it.
+None known.
 
 ## Gameplay and UX
 
-- **R retries without asking, mid-game** (`game.js:326`). With no checkpoint yet, R is a full restart, while the menu's Start over needs two presses. R sits right above WASD. Take R only while you're swallowed, or make it a hold-to-retry while you're alive.
-- **There's no pause.** Opening the settings menu doesn't stop the game, so you can be eaten while picking a feeding sound. `update()` already scales time for the hints, so pausing is mostly one flag: set the time scale to 0 while the panel is open, and bind Esc or P.
-- **Checkpoints don't survive a reload.** Growing to tier 28 is a long game. The last checkpoint could go to IndexedDB. Most of it is the opening's alive flags (about 2.5 MB as `Float32Array`s); bit-packed with `pack()` from `stream.js`, they'd be about 77 KB.
-- **A graphics setting.** The biggest GPU lever is the pixel ratio (see [Performance](#performance)), but changing it means editing `main.js`. A Graphics tab in the settings menu (resolution, bloom on or off) would fit the existing tabs.
-- **Phones:** there are no `env(safe-area-inset-*)` paddings, so the gear and the mass readout can sit under a notch in landscape. There's no fullscreen option either.
+- **Checkpoints don't survive a reload.** Growing to tier 28 is a long game. The last checkpoint could go to IndexedDB. The opening's alive flags are now bit-packed (about 77 KB), so a checkpoint is small; what's missing is serialising it (the holes' `Vector3`s, the streamer's `Map` of deltas) and loading it at startup.
 
 ## Performance
 
 ### Phones
 
-- **Graphics.** If the game still stutters on a phone, the GPU is the likely cause, and the investigation below couldn't measure it: headless Chromium renders in software. Fill rate dominates: additive points, the lens pass and bloom, all at a pixel ratio of up to 2 into half-float buffers. Options, cheapest first:
-  - Cap the pixel ratio lower on touch devices, say 1.5, which cuts the pixels by 44%.
-  - Scale the resolution with the frame time, which also means updating every `uSize`, the rings' `uWidth` and the composer's size when it changes.
-  - Offer it as a setting (see above).
+- **Graphics.** The Video tab now caps the pixel ratio (1.5 by default on touch screens) and can turn bloom off. If the game still stutters on a phone, the next step is to scale the resolution with the frame time. `fitToRenderer()` in `game.js` already follows any change to the renderer's pixel ratio, so it would only need something to watch the frame time and call `renderer.setPixelRatio()`, with some hysteresis.
 - **A shorter reverb.** The live reverb's 4 s impulse is now about a third of the audio thread's work. A 3 s one would save about a fifth of the total, at the cost of an audibly shorter tail. A mono reverb (`channelCount: 1`) measured slower in Chrome, not faster.
 - **Loading.** Building the opening's 618,183 stars runs on the main thread: a task of about 2 s with the CPU throttled 4× (`spiralParticles`, `looseStars`, `buildGrid`), then about 0.5 s for the first frame's uploads. The page shows nothing meanwhile. It could move to a worker the way the cells past the opening did (`buildCellParts()` / `fieldsOf()`). Mind the seeded stream: `planUniverse()` and `buildFields()` share one `mulberry32(UNIVERSE_SEED)`, so the worker would have to run both, in the same order.
-- **`update()` on a slow CPU.** With the CPU throttled 4×, `update()` took 4–6.5 ms at the median but 12–17 ms at the 95th percentile and 18–31 ms at the 99th, a frame's whole budget at 60 Hz. The software renderer was competing for the same cores, so these are pessimistic. Profiling on a real phone (Chrome remote debugging) would show whether it matters. `disk.update()`, the capture queries and the HUD are where to look.
+- **`update()` on a slow CPU.** With the CPU throttled 4×, `update()` took 4–6.5 ms at the median but 12–17 ms at the 95th percentile and 18–31 ms at the 99th, a frame's whole budget at 60 Hz. The software renderer was competing for the same cores, so these are pessimistic. Profiling on a real phone (Chrome remote debugging) would show whether it matters. `disk.update()` and the capture queries are where to look.
 
 ### CPU and memory
 
-- **Disk uploads** (`src/disk.js:114`). All four attributes are uploaded every frame, about 1.4 MB at full capacity. Colors and scales only change when particles are added or removed, so they could be uploaded only then. `aHole` (each particle's black hole centre and shadow) changes every frame, but it could become a uniform array of 128 `vec4`s indexed by slot, with the slot as a byte attribute, which leaves only positions to upload each frame.
-- **Alive flags.** `aAlive` is a `Float32Array` (`src/fields.js:91`): 4 bytes per star on the GPU and in every partial upload. A `Uint8` attribute works with the same shader. Each checkpoint also copies the opening's flags whole (`game.js:450`), about 2.5 MB; bit-packing them as the streamer's deltas do would make it about 77 KB.
-- **Jets** (`src/jets.js:51`). `update()` walks the whole 4,096-particle ring and uploads it all while any jet is live. Tracking the live range would trim both. It's small.
-- **HUD** (`src/hud.js:181`). Every frame it filters and sorts all black holes into a new array, and writes the mass text, meter width and vignette opacity even when they haven't changed. Writing only on change saves style recalculation on phones. It's small too.
+- **Disk uploads** (`src/disk.js`). Colors and scales are now uploaded only when particles come or go, but positions and `aHole` (each particle's black hole centre and shadow) still go up every frame. `aHole` could become a uniform array of 128 `vec4`s indexed by slot, with the slot as a byte attribute, which would leave only positions to upload each frame.
 - **The opening's fields stay in GPU memory** for good, hidden once you outgrow them. Freeing their buffers after they fade, and rebuilding them on Start over or a Retry back into the opening, would save memory late in the game. `reset()` relies on them staying, so this is a bigger change.
 
 ## Robustness
 
-- **Worker failures are silent** (`src/stream.js:17`). There's no `onerror`. If the worker can't load, every cell past the opening gets its core but no stars. `buildCellParts()` is pure, so falling back to building on the main thread would be easy.
-- **No message without WebGL 2.** `new THREE.WebGLRenderer()` throws and the page stays blank. A short message would say why.
-- **Embedding only works full-window.** The README says `createGame()` works with any renderer, but `game.js` (bloom size, `onResize`, `leastRingRadius`, `addLens`), `hud.js:138`, `hints.js:199` and `pointer.js:265` all use `window.innerWidth` and `innerHeight` and the pointer's client coordinates. Use the canvas's size and bounding rect, or narrow the README.
-- **The pixel ratio is read once** (`main.js:11`, `game.js:102`). Moving the window to a screen with a different DPI leaves star sizes and ring widths wrong.
+- **Embedding only works full-window.** `game.js` now follows the renderer's own size and pixel ratio, but `hud.js` (`placeMarker`), `hints.js` (`pin`) and `pointer.js` still use `window.innerWidth` and `innerHeight` and the pointer's client coordinates, and their overlays are fixed to the window. Use the canvas's bounding rect there to embed the game in part of a page. The README says it only works full-window for now.
 
 ## Tooling
 
-- **Tests.** There's no test suite, and CLAUDE.md states its invariants as prose. Most are checkable in a few lines with Vitest, since the modules are plain functions:
-  - both balance rules from CLAUDE.md, and `MAX_HOLES ≤ 256`
-  - `queryGrid()` against a brute-force search, including holes far off one side of the grid
-  - `pack()` / `unpack()` round trips, and `disk.load()` remapping slots
-  - `cellAt()` being deterministic, with no cells overlapping
-- **A smoke test.** Playwright with Chromium's software renderer runs the game headless: load a few `?tier=N` values in the dev server, drive it with the keyboard for 10 s, and fail on any page error. See [How it was measured](#how-it-was-measured).
-- **CI for pull requests.** `deploy.yml` only runs on pushes to `main`, so a broken build shows up at deploy time. A workflow that builds and tests pull requests would catch it first.
-- **A linter.** The code passes ESLint's recommended rules with no warnings today. Running ESLint in that workflow would keep it that way.
+- **More tests.** `test/` covers the pure modules (balance rules, `queryGrid()`, `pack()` / `unpack()`, the disk pool, `cellAt()`). The checkpoint round trip lives in `game.js`'s closure, so it can only be checked through the smoke test for now. Exposing `saveCheckpoint()` / `restore()` from a dev build would let a test check that a restore gives back exactly what was saved.
 
 ## Already done
 
-Commit `17f596f` fixed the audio breaking up and the game stalling on phones. `docs/architecture.md` describes the details:
+Since the review:
+
+- **Retry could freeze the game.** `removeHole()` now lets go of anything falling into the hole it removes, and `restore()` does the same for a hole saved falling into something that didn't come back. Checked by making one rival fall into another, removing the eater, then saving and retrying: no errors, and frames kept coming.
+- **Place names are part of checkpoints** (`visited`).
+- **R needs a hold while you're alive** (`RETRY_HOLD`), and a tap once you've been swallowed.
+- **Pause:** P or Esc, and while the settings menu is open.
+- **A Video tab:** resolution (the pixel ratio: 2, 1.5 by default on touch screens, or 1), bloom, and full screen. The pixel ratio follows changes in the screen's density.
+- **Phones:** `env(safe-area-inset-*)` keeps the gear, the mass readout and place names clear of a notch.
+- **Cheaper uploads and copies:** `aAlive` is a byte a star; checkpoints bit-pack the opening's alive flags (2.5 MB down to about 77 KB); the disk uploads colors and scales only when they change; jets simulate and upload only their live stretch; the HUD finds the nearest black holes without sorting a copy of the list and writes to the DOM only on change.
+- **Worker failures** fall back to building cells on the main thread.
+- **No WebGL 2:** the page says so instead of staying blank.
+- **Tooling:** Vitest unit tests (`npm test`), ESLint (`npm run lint`), a Playwright smoke test (`npm run smoke`), and a Check workflow that runs them and the build on pull requests.
+
+Before that, commit `17f596f` fixed the audio breaking up and the game stalling on phones. `docs/architecture.md` describes the details:
 
 - Sound effects are disconnected once they end. They used to stay in the audio graph until a retry. 300 of them tripled the audio thread's work, so the longer you played, the worse the sound got.
 - Only the chosen feeding sound is built. All six used to run, with five of them silent.

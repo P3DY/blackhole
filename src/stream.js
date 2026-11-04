@@ -1,6 +1,6 @@
 import { STREAM, radiusOf } from './config.js';
-import { cellsNear } from './cosmos.js';
-import { fieldsOf } from './fields.js';
+import { cellAt, cellsNear } from './cosmos.js';
+import { buildCellParts, fieldsOf } from './fields.js';
 
 // The endless universe past the opening (cosmos.js), made real around you. Every cell near enough, and not long
 // outgrown, gets a record at once, with its core and maybe a rival. Its star fields take a frame or so to build,
@@ -11,20 +11,44 @@ import { fieldsOf } from './fields.js';
 // The game hears about records through `onBuild(record, delta)` (make its core, and maybe its rival),
 // `onFold(record, delta)` (note the core's state in the delta) and `onDrop(record)` (let go of the core).
 // `fields` is the game's list of every field; the streamer adds its own to it and takes them out again.
+//
+// If the worker can't be started or fails, the cells are built on this thread instead, one a frame. That's a
+// dropped frame each, but every cell still gets its stars.
 export function createStreamer({ scene, fields, material, onBuild, onFold, onDrop }) {
   const records = new Map(); // cell key → { key, cell, name, x, z, radius, tier, core, field, fields, dropped }
   let deltas = new Map(); // cell key → { fields: [{ eaten, remaining }], core: { gone, mass }, rival }
-  const worker = new Worker(new URL('./builder.js', import.meta.url), { type: 'module' });
-  const waiting = new Map(); // request id → the record its fields are for
+  const waiting = new Map(); // request id → { record, ring, sector }: the record its fields are for, and its cell
   const arrived = []; // { record, parts } built, waiting to go into the scene
+  const local = []; // request ids to build on this thread, without the worker
   let nextId = 0;
   let planned = -Infinity; // when the cells around you were last worked out, in ms
 
-  worker.onmessage = ({ data: { id, parts } }) => {
-    const record = waiting.get(id);
+  function deliver(id, parts) {
+    const request = waiting.get(id);
     waiting.delete(id);
-    if (record && !record.dropped) arrived.push({ record, parts });
-  };
+    if (request && !request.record.dropped) arrived.push({ record: request.record, parts });
+  }
+
+  let worker = null;
+  try {
+    worker = new Worker(new URL('./builder.js', import.meta.url), { type: 'module' });
+    worker.onmessage = ({ data: { id, parts } }) => deliver(id, parts);
+    worker.onerror = (event) => {
+      event.preventDefault();
+      console.warn('The cell builder failed, so cells are built on the main thread from now on.', event.message ?? '');
+      withoutWorker();
+    };
+  } catch (error) {
+    console.warn('The cell builder could not start, so cells are built on the main thread.', error);
+  }
+
+  // From now on, every cell is built here, including those the worker was still building.
+  function withoutWorker() {
+    worker?.terminate();
+    worker = null;
+    local.length = 0;
+    local.push(...waiting.keys());
+  }
 
   function deltaOf(key) {
     let delta = deltas.get(key);
@@ -38,8 +62,9 @@ export function createStreamer({ scene, fields, material, onBuild, onFold, onDro
     records.set(key, record);
     onBuild(record, deltaOf(key));
     const id = nextId++;
-    waiting.set(id, record);
-    worker.postMessage({ id, ring: cell.ring, sector: cell.sector });
+    waiting.set(id, { record, ring: cell.ring, sector: cell.sector });
+    if (worker) worker.postMessage({ id, ring: cell.ring, sector: cell.sector });
+    else local.push(id);
   }
 
   // Puts a cell's fields into the scene, with the stars you'd eaten there still gone. `time` (game time) sets how
@@ -108,6 +133,18 @@ export function createStreamer({ scene, fields, material, onBuild, onFold, onDro
         planned = now;
         plan(focus, tier);
       }
+      // Without the worker, one cell a frame is built here, skipping any dropped meanwhile.
+      while (local.length > 0) {
+        const id = local.shift();
+        const request = waiting.get(id);
+        if (!request) continue;
+        if (request.record.dropped) {
+          waiting.delete(id);
+          continue;
+        }
+        deliver(id, buildCellParts(cellAt(request.ring, request.sector)));
+        break;
+      }
       for (const { record, parts } of arrived.splice(0, 2)) if (!record.dropped) fill(record, parts, time);
     },
 
@@ -138,7 +175,7 @@ export function createStreamer({ scene, fields, material, onBuild, onFold, onDro
     },
 
     dispose() {
-      worker.terminate();
+      worker?.terminate();
     },
   };
 }
@@ -156,12 +193,12 @@ function copyDeltas(deltas) {
 }
 
 // Which of a field's particles have been eaten, one bit each.
-function pack(alive) {
+export function pack(alive) {
   const bits = new Uint8Array(Math.ceil(alive.length / 8));
   for (let i = 0; i < alive.length; i++) if (alive[i] === 0) bits[i >> 3] |= 1 << (i & 7);
   return bits;
 }
 
-function unpack(bits, alive) {
+export function unpack(bits, alive) {
   for (let i = 0; i < alive.length; i++) alive[i] = bits[i >> 3] & (1 << (i & 7)) ? 0 : 1;
 }

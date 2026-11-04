@@ -30,10 +30,12 @@ Then open the URL Vite prints (http://localhost:5173 by default).
 | **Shift** / hold right mouse button | Boost (1.8× thrust, burns mass) |
 | Left-drag | Orbit the camera. You hold your course while you drag |
 | Scroll | Zoom |
-| **R** | Retry from your last checkpoint (or from the start, if you haven't reached one) |
+| **R** | Retry from your last checkpoint (or from the start, if you haven't reached one). While you're alive, hold it for a moment, so a stray press can't throw the run away |
+| **P** / **Esc** | Pause, or carry on. The game also pauses while the settings menu is open |
 | Gear menu (top left), Game tab | **Retry**, or **Start over** from the beginning (press it twice, since it throws your checkpoint away) |
 | **M** / gear menu, Sound tab | Mute or unmute. The Sound tab also mutes music or effects on their own. Settings are remembered |
 | Feeding, in the Sound tab | Pick the sound you hear while you feed: Crackle, Tuned (default), Drone, Rain, Whoosh or Gulps. Picking one plays it for a moment. Your choice is remembered |
+| Gear menu, Video tab | Resolution (Sharp, Balanced or Fast), bloom, and full screen where the browser allows it. Remembered |
 
 On a touch screen:
 
@@ -87,18 +89,31 @@ src/
   jets.js           ring-buffered relativistic-jet particles
   shaders.js        all GLSL: star fields, disks, jets, rings, lensing pass
   pointer.js        mouse and touch steering: joystick, follow-finger and tilt modes
-  settings.js / .css the gear menu: tabs that the HUD, the audio and the touch settings fill
+  settings.js / .css the gear menu: tabs that the HUD, the audio, the graphics and the touch settings fill
+  graphics.js       the Video tab: resolution (the pixel ratio), bloom, full screen
   audio.js          synthesised music loop, ambience and sound effects
   hud.js / hud.css  DOM overlay: mass readout, edge arrows, vignette, checkpoint note, end card, Game tab
   hints.js / .css   control lessons as looping gestures, and the slowed moments that explain weight
   style.css         page base styles
   utils.js          seeded random and seed mixing, backdrop starfield, GPU disposal helper
+test/               Vitest unit tests: balance rules, the spatial grid, bit-packing, the disk pool, the cells
+scripts/smoke.js    headless smoke test: plays the game at a few scales in Chromium and fails on any page error
 docs/
   gameplay.md       rules, scaling, the scales past the opening, rival AI
   architecture.md   frame loop, the endless universe, rendering pipeline, data structures, performance
   tuning.md         what the constants in config.js do and how they interact
   improvements.md   known bugs and suggested improvements not made yet, and how performance was measured
 ```
+
+## Checking a change
+
+```bash
+npm run lint      # ESLint
+npm test          # Vitest
+npm run smoke     # plays the game headless; needs Playwright and its Chromium
+```
+
+The Check workflow runs all three, and the build, on every pull request.
 
 ## Deploying
 
@@ -108,9 +123,11 @@ docs/
 
 `createGame({ renderer, camera, controls })` in `src/game.js` takes an existing three.js renderer, a `PerspectiveCamera` and `OrbitControls`. It returns `{ scene, update(elapsed, delta), render(delta), dispose() }`. Call `update` and then `render` every frame. `dispose()` removes the game's listeners, its HUD, its GPU resources and its audio. `src/main.js` is the minimal host.
 
+The game follows the renderer's size and pixel ratio each frame, so the host can size the canvas however it likes, and the Video tab sets the renderer's pixel ratio. The HUD, the hints and pointer steering still assume the canvas fills the window, though: their overlays are fixed to the window, and they use the window's size and the pointer's client coordinates. So for now the game only works full-window.
+
 ## Browser support
 
-The game needs WebGL 2 and module workers, which every current desktop and mobile browser has. It plays with keyboard, mouse or touch, and the hints show the gestures for whichever you have. Sound starts at the first click, touch or key press, because browsers don't allow a page to play audio before one. All of it is synthesised with the Web Audio API, so there are no audio files to load. Performance depends mostly on fill rate: with additive particles, bloom and lensing at full resolution, a low-end GPU at a high pixel ratio is the usual bottleneck. The renderer caps the pixel ratio at 2.
+The game needs WebGL 2 and module workers, which every current desktop and mobile browser has. It plays with keyboard, mouse or touch, and the hints show the gestures for whichever you have. Sound starts at the first click, touch or key press, because browsers don't allow a page to play audio before one. All of it is synthesised with the Web Audio API, so there are no audio files to load. Performance depends mostly on fill rate: with additive particles, bloom and lensing at full resolution, a low-end GPU at a high pixel ratio is the usual bottleneck. The Video tab picks the pixel ratio: up to 2 (Sharp), 1.5 (Balanced, the default on touch screens) or 1 (Fast). Without WebGL 2, the page says so instead of staying blank.
 
 ## Origin
 

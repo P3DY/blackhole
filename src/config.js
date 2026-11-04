@@ -236,6 +236,11 @@ export const KEYS = {
   left: ['KeyA', 'ArrowLeft'],
   right: ['KeyD', 'ArrowRight'],
   boost: ['ShiftLeft', 'ShiftRight'],
-  retry: ['KeyR'], // back to the last checkpoint, or the start if there isn't one
+  retry: ['KeyR'], // back to the last checkpoint, or the start if there isn't one: held for RETRY_HOLD while alive
   mute: ['KeyM'],
+  pause: ['KeyP', 'Escape'], // Escape closes the settings menu first, if it's open
 };
+
+// Seconds R has to be held to retry while you're still alive, so a stray press mid-game doesn't throw it away.
+// Once you've been swallowed, a tap does it.
+export const RETRY_HOLD = 0.8;

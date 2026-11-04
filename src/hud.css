@@ -22,8 +22,8 @@
 /* Mass and feeding rate: no frame, just faint text in the corner. */
 .bh-readout {
   position: absolute;
-  top: 18px;
-  right: 20px;
+  top: calc(18px + env(safe-area-inset-top, 0px)); /* clear of a notch */
+  right: calc(20px + env(safe-area-inset-right, 0px));
   width: 140px;
   text-align: right;
   opacity: 0.7;
@@ -90,7 +90,7 @@
    things ("Galaxy clusters") is set a little larger. */
 .bh-place {
   position: absolute;
-  top: 22px;
+  top: calc(22px + env(safe-area-inset-top, 0px));
   left: 50%;
   translate: -50% 0;
   font-size: 12px;
@@ -123,6 +123,44 @@
   100% {
     opacity: 0;
   }
+}
+
+/* Paused, or holding R to retry: a word in the middle of the screen, a note under it and, while R is held, a
+   bar filling up under that. */
+.bh-status {
+  position: absolute;
+  top: 38%;
+  left: 50%;
+  translate: -50% -50%;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  min-width: 140px;
+  text-align: center;
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.9);
+}
+
+.bh-status[hidden] {
+  display: none;
+}
+
+.bh-status span {
+  font-size: 15px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: #ffe3b8;
+}
+
+.bh-status small {
+  font-size: 11px;
+  color: #b8c0d0;
+}
+
+.bh-status i {
+  justify-self: start;
+  width: 0;
+  height: 2px;
+  background: rgba(255, 176, 112, 0.9);
 }
 
 /* Edge arrows toward off-screen black holes: red outweighs you, blue is prey. */

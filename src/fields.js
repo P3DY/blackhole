@@ -88,8 +88,9 @@ function createField(particles, masses, material, { x = 0, z = 0, spinRate = 0, 
   geometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
   geometry.setAttribute('aScale', new THREE.BufferAttribute(scales, 1));
   geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
-  const alive = new Float32Array(count).fill(1);
-  const aliveAttribute = new THREE.BufferAttribute(alive, 1).setUsage(THREE.DynamicDrawUsage);
+  // A byte a star, normalized, so the shader still reads a float, 0 or 1, and every format can take it as it is.
+  const alive = new Uint8Array(count).fill(1);
+  const aliveAttribute = new THREE.BufferAttribute(alive, 1, true).setUsage(THREE.DynamicDrawUsage);
   geometry.setAttribute('aAlive', aliveAttribute);
 
   const points = new THREE.Points(geometry, material);
