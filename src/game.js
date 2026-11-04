@@ -343,6 +343,8 @@ export function createGame({ renderer, camera, controls, opening: prebuilt }) {
 
   // Paused with P or Esc, and while the settings menu is open.
   let paused = false;
+  // With a keyboard, switching to another window pauses too. Not on touch screens, which have no key to carry on.
+  const pauseOnBlur = !(window.matchMedia?.('(pointer: coarse)').matches ?? false);
   // Seconds R has been held while you're alive, or -1 when it isn't. Retrying mid-game takes a hold (RETRY_HOLD),
   // so a stray press doesn't throw the run away. Once you've been swallowed, a press does it.
   let retryHeld = -1;
@@ -367,6 +369,7 @@ export function createGame({ renderer, camera, controls, opening: prebuilt }) {
   const onBlur = () => {
     pressed.clear();
     retryHeld = -1;
+    if (pauseOnBlur && player.state === 'alive') paused = true;
   };
 
   window.addEventListener('keydown', onKeyDown);
