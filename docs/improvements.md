@@ -17,7 +17,6 @@ None known.
 ### Phones
 
 - **Graphics.** The Video tab now caps the pixel ratio (1.5 by default on touch screens) and can turn bloom off. If the game still stutters on a phone, the next step is to scale the resolution with the frame time. `fitToRenderer()` in `game.js` already follows any change to the renderer's pixel ratio, so it would only need something to watch the frame time and call `renderer.setPixelRatio()`, with some hysteresis.
-- **A shorter reverb.** The live reverb's 4 s impulse is now about a third of the audio thread's work. A 3 s one would save about a fifth of the total, at the cost of an audibly shorter tail. A mono reverb (`channelCount: 1`) measured slower in Chrome, not faster.
 - **Loading.** Building the opening's 618,183 stars runs on the main thread: a task of about 2 s with the CPU throttled 4× (`spiralParticles`, `looseStars`, `buildGrid`), then about 0.5 s for the first frame's uploads. The page shows nothing meanwhile. It could move to a worker the way the cells past the opening did (`buildCellParts()` / `fieldsOf()`). Mind the seeded stream: `planUniverse()` and `buildFields()` share one `mulberry32(UNIVERSE_SEED)`, so the worker would have to run both, in the same order.
 - **`update()` on a slow CPU.** With the CPU throttled 4×, `update()` took 4–6.5 ms at the median but 12–17 ms at the 95th percentile and 18–31 ms at the 99th, a frame's whole budget at 60 Hz. The software renderer was competing for the same cores, so these are pessimistic. Profiling on a real phone (Chrome remote debugging) would show whether it matters. `disk.update()` and the capture queries are where to look.
 
@@ -45,6 +44,7 @@ Since the review:
 - **A Video tab:** resolution (the pixel ratio: 2, 1.5 by default on touch screens, or 1), bloom, and full screen. The pixel ratio follows changes in the screen's density.
 - **Phones:** `env(safe-area-inset-*)` keeps the gear, the mass readout and place names clear of a notch.
 - **Cheaper uploads and copies:** `aAlive` is a byte a star; checkpoints bit-pack the opening's alive flags (2.5 MB down to about 77 KB); the disk uploads colors and scales only when they change; jets simulate and upload only their live stretch; the HUD finds the nearest black holes without sorting a copy of the list and writes to the DOM only on change.
+- **A shorter reverb:** the live reverb's impulse is 3 s instead of 4, about a fifth less work for the audio thread.
 - **Worker failures** fall back to building cells on the main thread.
 - **No WebGL 2:** the page says so instead of staying blank.
 - **Tooling:** Vitest unit tests (`npm test`), ESLint (`npm run lint`), a Playwright smoke test (`npm run smoke`), and a Check workflow that runs them and the build on pull requests.
