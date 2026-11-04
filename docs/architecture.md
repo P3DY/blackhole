@@ -310,7 +310,7 @@ Every sound is synthesised with the Web Audio API. There are no audio files, and
     | `gulps` | Soft low notes sliding down into place, 1 to 4 a second as feeding rises |
 
   - Which one plays is the player's choice. The default is `AUDIO.feeding` (`tuned`). The **Feeding** section of the settings menu's Sound tab picks another, which is kept in `localStorage`. Picking one plays it for 2.5 s as if you were feeding hard, so you hear what you chose without flying into stars. Their levels were matched by measurement, allowing for low sounds seeming quieter, so switching doesn't change how loud feeding is.
-- **Events.** `fall()` and `swallow()` in `game.js` call these, and step 9 of the frame calls `sideChange`:
+- **Events.** `fall()` and `swallow()` in `game.js` call these, and step 10 of the frame calls `sideChange`:
 
   | Call | When | Sound |
   |------|------|-------|
@@ -336,7 +336,7 @@ Every sound is synthesised with the Web Audio API. There are no audio files, and
 
 ## Checkpoints
 
-Each core or rival you swallow makes a checkpoint due (`pending` in `game.js`). Step 9 saves it in the first frame where you're alive, nothing heavier is within `CHECKPOINT.safe` (8) of its danger radii (`danger < 1 / safe²`), and no rival is hunting you. So a retry never drops you somewhere you can't get away from. If you're swallowed before it's saved, Retry goes back to the checkpoint before.
+Each core or rival you swallow makes a checkpoint due (`pending` in `game.js`). Step 10 of the frame saves it in the first frame where you're alive, nothing heavier is within `CHECKPOINT.safe` (8) of its danger radii (`danger < 1 / safe²`), and no rival is hunting you. So a retry never drops you somewhere you can't get away from. If you're swallowed before it's saved, Retry goes back to the checkpoint before.
 
 - `saveCheckpoint()` copies everything that changes as you play (`snapshot()`), names it after what you swallowed, and stores it (see below):
   - each of the opening's fields' alive flags (bit-packed with `pack()` from `stream.js`), remaining count and rotation

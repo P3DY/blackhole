@@ -10,12 +10,16 @@ None known.
 
 ## Gameplay and UX
 
-Nothing pending.
+- **Lessons start again on a reload, though the run doesn't.** Since checkpoints survive a reload, a returning player carries on mid-run but is taught steering and boosting again, slowed moments and all. `hints.js` keeps its progress (`current`, and which slowed moments have been shown) only in memory. Remembering it with the `readChoice` / `writeChoice` helpers in `settings.js` would fix it; Start over should keep it, as it does now.
+- **What you did since the last checkpoint is lost on a reload.** Only checkpoints are stored, and one is saved only after you swallow a core or a rival. Saving one on `pagehide` (when it would be safe, by the same rule as step 10 of the frame in `docs/architecture.md`) would keep more of a run, but a write that late isn't guaranteed to finish, so it's a bonus rather than a promise.
+- **No reduced-motion mode.** Only the loading screen honours `prefers-reduced-motion`. The hints' looping gestures (`hints.css`), the rings' flares on a change of side and the slowed moments could calm down or stop for those who ask.
 
 ## Performance
 
 ### Phones
 
+- **Try the resolution scaler on real phones.** `PACE` in `pacer.js` was tuned in theory and in unit tests. Headless Chromium draws WebGL in software and barely speeds up at a lower resolution, so it couldn't show the scaler helping. Each change it makes also costs a hitch (see the next item but one), so if a phone keeps stepping back and forth, lengthen `holdOff` or `upAfter`.
+- **The rest of loading.** The longest task left while loading (0.5–0.7 s at 4×) hasn't been broken down: evaluating the script, wrapping the opening's arrays in geometry (`fieldsOf()`), `renderer.compile()` and the first frame's uploads all fall in it. A profile would show whether any of it can move or shrink.
 - **A shorter reverb.** The live reverb's 4 s impulse is now about a third of the audio thread's work. A 3 s one would save about a fifth of the total, at the cost of an audibly shorter tail. A mono reverb (`channelCount: 1`) measured slower in Chrome, not faster.
 - **`update()` on a slow CPU.** Timed section by section with the CPU throttled 4× (90 s each, steering and boosting, with the resolution fixed), `update()` now takes 2–4 ms at the median, 6–10 ms at the 95th percentile and 11–13 ms at the 99th, at tiers 0 and 8. The slowest frames are spread over the capture queries, `disk.update()` and the audio (mostly `chime()` making its nodes, 5–10 ms each), with no single culprit left. Next steps, if a real phone (Chrome remote debugging) shows it still matters: let the capture queries skip grid cells whose stars are all eaten (a live count per cell, which `reset()`, `restore()` and the streamer's `fill()` would have to recount), and reuse chime voices instead of making new nodes. Two hitches are known and left alone: getting swallowed (the end card and its sound, about 65 ms at 4×), and each change the resolution scaler makes (the canvas and every buffer are remade, 100–240 ms at 4× in headless Chromium).
 
@@ -25,10 +29,13 @@ Nothing pending.
 
 ## Robustness
 
+- **A saved checkpoint only checks the opening's shape.** `fits()` in `save.js` turns away a save from another `SAVE_VERSION`, another seed, or an opening whose fields have other star counts. But a change to `cosmos.js` or the constants that size the cells' fields would let an old save's cell deltas unpack onto different stars without complaint (`unpack()` doesn't check lengths). Storing each delta's star count beside its bits and skipping any that don't match in the streamer's `fill()`, or storing a fingerprint of the constants that shape the universe, would close it. Until then, bump `SAVE_VERSION` with any such change.
 - **Embedding only works full-window.** `game.js` now follows the renderer's own size and pixel ratio, but `hud.js` (`placeMarker`), `hints.js` (`pin`) and `pointer.js` still use `window.innerWidth` and `innerHeight` and the pointer's client coordinates, and their overlays are fixed to the window. Use the canvas's bounding rect there to embed the game in part of a page. The README says it only works full-window for now.
 
 ## Tooling
 
+- **Test the fallbacks in the smoke test.** The opening's worker failing (so it's built on the main thread) and IndexedDB being unavailable were checked by hand. The smoke test could block `builder-*.js` with `page.route()` for one pass, and delete `indexedDB` in an init script for another, and check the game still starts with only warnings.
+- **A dev-only profiler.** Timing `update()` section by section meant patching `game.js` by hand (see [How it was measured](#how-it-was-measured)). A `?profile` switch in development, timing the same sections into `window.blackHole`, would make it repeatable.
 - **More tests.** `test/` covers the pure modules (balance rules, `queryGrid()`, `pack()` / `unpack()`, the disk pool, `cellAt()`, `fits()`), and the smoke test checks a checkpoint's round trip through a reload. A unit test of `restore()` itself would need `game.js`'s closure in a test without WebGL.
 
 ## Already done
@@ -68,6 +75,8 @@ These looked like possible causes of stutter, but weren't:
 - **Checkpoint saves** take 5–17 ms with the CPU throttled 4×, a dropped frame at most.
 - **Streaming cells** past the opening caused no spikes in `update()` while flying through new cells at tier 10.
 - **The hints' CSS animations** (some animate `box-shadow`, which repaints) only run while a lesson is showing.
+- **Storing a checkpoint in IndexedDB** takes 19–94 ms from start to stored with the CPU throttled 4×, at tiers 0 and 8, but nearly all of it is waiting on the database: no main-thread task over 50 ms.
+- **Garbage collection** isn't behind the big spikes in `update()` it first looked like. Those were the resolution scaler resizing and the end card being built.
 
 ## How it was measured
 
@@ -77,4 +86,6 @@ All of it ran headless, with Playwright and the Chromium that comes with it. Tha
 - **Long tasks:** a `PerformanceObserver` for `longtask`, together with a CPU profile (`Profiler.start` / `Profiler.stop`). To tell what each task was, the profile's clock was lined up with `performance.now()` by spinning in a uniquely named function at a known time. Then the samples inside each task were tallied by the innermost function from `src/`.
 - **Shader compiles:** `renderer.info.programs.length` each frame, and `renderer.properties.get(material).currentProgram` for each object, from `window.blackHole` in a dev build.
 - **The audio thread's work:** an init script replaced `window.AudioContext` with a subclass of `OfflineAudioContext` (20 s at 48 kHz). The game built its graph as usual, the render loop was stopped, and `startRendering()` was timed. With the CPU to itself, 20 s of the old graph took about 1.65 s to render and the new one about 0.96 s. Adding 300 leftover effect outputs made the old graph take 4.6 s.
+- **`update()` section by section:** a temporary patch to `game.js` read `performance.now()` between the steps of the frame (AI and movement, streaming, fields, capture, disk, jets, rings, camera and lenses, HUD, hints, audio) and kept each frame's times, with the Video tab's adapting turned off (`localStorage['black-hole:no-adapt'] = '1'`). Playwright held W, turned and boosted for 90 s at each tier, after a 10 s warm-up at 4× so the audio and the first cells were ready. Then median, 95th and 99th percentiles per section, and each section's share of the slowest 5% of frames.
+- **Leftover audio nodes:** an `OfflineAudioContext` rendering 20 s with a reverb and five chimes a second, plus 1,000 chimes that rang in the first second and were then left connected, disconnected, or left with nothing holding them (with and without a forced collection, `--js-flags=--expose-gc`). Keep the nodes out of any array in the unpruned case, or you're measuring held nodes.
 - **Autoplay:** Playwright's Chromium allows autoplay by default. Pass `ignoreDefaultArgs: ['--autoplay-policy=no-user-gesture-required']` to see the context wait for the first input, and watch the console for Chrome's "The AudioContext was not allowed to start" warnings.
