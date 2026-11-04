@@ -44,7 +44,7 @@ Since the review:
 - **Pause:** P or Esc, and while the settings menu is open.
 - **A Video tab:** resolution (the pixel ratio: 2, 1.5 by default on touch screens, or 1), bloom, and full screen. The pixel ratio follows changes in the screen's density.
 - **Phones:** `env(safe-area-inset-*)` keeps the gear, the mass readout and place names clear of a notch.
-- **Cheaper uploads and copies:** `aAlive` is a byte a star; checkpoints bit-pack the opening's alive flags (2.5 MB down to about 77 KB); the disk uploads colors and scales only when they change; jets simulate and upload only their live stretch; the HUD finds the nearest black holes without sorting a copy of the list and writes to the DOM only on change.
+- **Cheaper uploads and copies:** checkpoints bit-pack the opening's alive flags (2.5 MB down to about 77 KB); the disk uploads colors and scales only when they change; jets simulate and upload only their live stretch; the HUD finds the nearest black holes without sorting a copy of the list and writes to the DOM only on change.
 - **Worker failures** fall back to building cells on the main thread.
 - **No WebGL 2:** the page says so instead of staying blank.
 - **Tooling:** Vitest unit tests (`npm test`), ESLint (`npm run lint`), a Playwright smoke test (`npm run smoke`), and a Check workflow that runs them and the build on pull requests.
