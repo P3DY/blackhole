@@ -16,6 +16,7 @@ main.js ──► game.js ──┬─► config.js        constants (imported b
                       ├─► jets.js          createJets
                       ├─► shaders.js       GLSL strings
                       ├─► settings.js ──► settings.css   createSettings (the tabbed gear menu), localStorage helpers
+                      ├─► graphics.js      createGraphics (the Video tab: pixel ratio, bloom, full screen)
                       ├─► pointer.js       createPointer (mouse and touch steering, in three touch modes)
                       ├─► audio.js         createAudio (synthesised music, ambience, effects)
                       ├─► hud.js ──► hud.css
@@ -72,6 +73,7 @@ Past the opening, the universe is made on demand by three modules. `cosmos.js` s
   - Cores take their black hole's proper name where it has one (M87\*, NGC 4889\*, the Great Attractor), otherwise "the *name* core".
   - Rivals are named for real quasars, then `QSO J…`.
 - **The streamer (`stream.js`).** `createStreamer()` keeps a **record** for every cell near you: `{ key, cell, name, x, z, radius, tier, core, field, fields, dropped }`. Records have the same `{ x, z, radius, field, core }` as the opening's galaxies, so the rival AI treats both alike. Four times a second the streamer works out which cells it wants: those whose structure is within `STREAM.build` (10) of your galaxy radii (`radiusOf` your tier), and no more than `STREAM.fade[0]` (3.5) tiers below you.
+  - If the worker can't start, or fails (`onerror`), cells are built on the main thread instead, one a frame, including any the worker was still building. Each is a dropped frame, but nothing goes without its stars.
   - A wanted cell gets a record **at once**. `onBuild` makes its core, and its rival the first time round if fewer than 7 rivals are about. Then the cell goes to the worker. Its fields arrive a few frames later (about 20 ms of work each, which would stall a frame on the main thread), and up to two a frame go into the scene. So a core never turns up late, on top of you.
   - A record is **dropped** once its structure is beyond `STREAM.drop` (14) galaxy radii, or 0.3 tiers further below you than it was wanted, so it doesn't flicker in and out. Its fields are removed and disposed, and `onDrop` frees its core's slot. If the worker answers for a record that's been dropped meanwhile, the answer is thrown away.
 - **Deltas.** What you changed in a cell lives on after it's dropped, keyed by cell. Each field keeps its eaten stars as a bitset, with the count left. The core keeps its mass, or that it's gone. The cell keeps whether its rival has come out. A cell built again is as you left it. Galaxies' angles aren't kept: a cell's fields start at `spinRate × game time`.
@@ -82,7 +84,7 @@ Past the opening, the universe is made on demand by three modules. `cosmos.js` s
 
 ## The frame
 
-`update(elapsed, frameDelta)` first scales the host's delta: `delta = frameDelta · timeScale`. The time scale is 1 except while a hint slows the game down (see [Hints](#hints-hintsjs)). Steps 1–12 run on that scaled game time; the hints and the audio get the real `frameDelta`. Then it runs these steps in order:
+`update(elapsed, realDelta)` first follows the renderer's size and pixel ratio (`fitToRenderer()`: the composer, every `uSize` and the rings' `uWidth`), and counts a held R toward a retry. Then it scales the host's delta: `frameDelta` is 0 while paused (P, Esc or the settings menu open) and `realDelta` otherwise, and `delta = frameDelta · timeScale`. The time scale is 1 except while a hint slows the game down (see [Hints](#hints-hintsjs)). Steps 1–12 run on that scaled game time; the hints get `frameDelta` (so they wait while paused) and the audio the real delta, with a time scale of 0 while paused, which muffles it. Then it runs these steps in order:
 
 1. **Sizes.** Each shadow eases toward `shadowOf(mass)`. A falling hole's drawn size shrinks with the square root of how far it has fallen.
 2. **Steer.** Turns input into thrust for the player. Held keys win, and they push relative to the camera's flattened forward direction. Otherwise `pointer.steer()` supplies a push of length 0–1. With a mouse, it aims at the point on the galactic plane under the cursor, which it finds by raycasting. With touch, it depends on the touch mode: the joystick's offset or the phone's tilt is mapped onto the same camera axes as the keys, or the black hole aims at the point under the finger, as it does for the cursor. See [Pointer input](#pointer-input-pointerjs).
@@ -120,7 +122,7 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 
 - These are static geometry. Only the `Points` object's `rotation.y` changes.
 - Each field has its own `ShaderMaterial`. They all share the `uSize`, `uTime`, `uWarps` and `uWarpCount` uniform objects, so three.js compiles one program for all of them. A field's own `uFade` dims it as you outgrow it.
-- **Captured stars** are hidden by a per-particle `aAlive` float. The shader moves dead points outside the clip volume. Only the changed index range (`dirtyMin…dirtyMax`) is uploaded each frame, through `BufferAttribute.addUpdateRange()`. A field with nothing left is hidden.
+- **Captured stars** are hidden by a per-particle `aAlive` byte (a normalized `Uint8Array`, so the shader still reads a float 0 or 1). The shader moves dead points outside the clip volume. Only the changed index range (`dirtyMin…dirtyMax`) is uploaded each frame, through `BufferAttribute.addUpdateRange()`. A field with nothing left is hidden.
 - **Gravity warp.** Within 2.2× reach of up to 8 roaming holes, stars are drawn pulled in, twisted and flattened. `warpToward()` in `holes.js` is the **exact CPU mirror** of this shader code, so a captured star starts its orbit precisely where it was drawn. If you change the warp in one place, change it in the other.
 - Points below one pixel are drawn one pixel wide and dimmed instead, which stops them flickering.
 
@@ -158,7 +160,7 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 ### Disk pool (`disk.js`)
 
 - One pool of `DISK_CAPACITY` (32,768) particles is shared by every black hole. The arrays are stored per attribute, and each particle carries an `owners[i]` slot.
-- Live particles are **kept packed** at the front. Absorbing one swaps the last particle into its slot. Only `[0, count)` is drawn (`setDrawRange`) and uploaded (`addUpdateRange`).
+- Live particles are **kept packed** at the front. Absorbing one swaps the last particle into its slot. Only `[0, count)` is drawn (`setDrawRange`) and uploaded (`addUpdateRange`). Positions and `aHole` are uploaded every frame; colors and scales only when particles have been added, removed or loaded.
 - Orbits are applied as an **exact rotation** of `ORBIT_SPEED · (S/r)^1.5 · Δt` plus inflow, so tight orbits don't drift outward the way Euler steps would. A newly captured star keeps the difference between its own velocity and the flow as a drift, which decays at `SETTLE`. That way it eases into orbit instead of snapping.
 - When a hole is swallowed, `transfer(from, to)` reassigns its particles to the eater. When a slot is freed, `release(slot)` drops whatever particles still name it.
 - `load(saved, remap)` puts a checkpoint's particles back, moving each to the slot its black hole has now (`remap`) and dropping those whose black hole is gone.
@@ -168,13 +170,13 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 
 - `slots[MAX_HOLES]` maps each slot to its black hole.
 - `addHole()` gives a black hole the lowest free slot and that slot's ring, and adds it to `holes` (and to `roamers` if it roams).
-- `removeHole()` releases the slot's disk particles, frees the slot, hides the ring, and marks the hole object `gone`, so anything still holding it (a hint's moment, say) sees it gone. Slots are reused; hole objects never are.
+- `removeHole()` first lets go of anything still falling into the hole: it goes back to `alive` with no eater and carries on as it was. Then it releases the slot's disk particles, frees the slot, hides the ring, and marks the hole object `gone`, so anything still holding it (a hint's moment, say) sees it gone. Slots are reused; hole objects never are.
 - Each black hole has a lasting `key`: `player`, `rival:<name>`, `core:opening:<i>`, `core:cell:<ring>:<sector>` or `rival:cell:<ring>:<sector>`. Checkpoints keep black holes by key, since their slots can change.
 - The opening's cores are permanent. A cell's core comes and goes with its record. Once swallowed, it stays in its slot until the cell is dropped, and isn't made again. Rivals are made afresh on every reset and restore.
 
 ### Jet pool (`jets.js`)
 
-- A ring buffer of `JET_CAPACITY` (4,096) particles. New particles overwrite the oldest.
+- A ring buffer of `JET_CAPACITY` (4,096) particles. New particles overwrite the oldest. Every particle lives as long, so they die in the order they were made, and the live ones are one stretch before `next` (wrapping around). Only that stretch is simulated and uploaded.
 - Each roaming hole emits up to 600 particles per second, scaled by `appetite` and split between both poles. Each particle lives `JET_LIFE` (0.8 s).
 
 ## Performance budget
@@ -194,7 +196,7 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 - **Building cells** takes about 20 ms each (generating the particles and their grid), so the worker does it. The main thread only wraps the arrays it hands back in geometry, two cells a frame at most. Flying through new cells at tier 8 kept frames under 14 ms (p99) on a 144 Hz display. In development the worker loads three.js unbundled, so the first cells take a few seconds to arrive; in a build they arrive within a fraction of a second.
 - **Memory** is about 100 MB of JS heap at tier 15. Saving a checkpoint takes about 6 ms.
 - **Fields are frustum-culled** as whole `Points` objects, so only fields in view cost vertex work, and faded fields are hidden. The four giants past Andromeda are capped at 60,000 stars each (`MAX_GALAXY_STARS` in `universe.js`), and each cell's structure has 24,000. Their stars are drawn bigger to match, so they look about as full without the load.
-- **GPU cost** is dominated by fill rate: additive points, plus bloom and lensing at full resolution. The renderer caps the pixel ratio at 2, and has no MSAA, since everything is drawn into the composer's buffers, which don't use it. On weak GPUs, lowering the pixel ratio to 1 in `main.js` is the biggest win.
+- **GPU cost** is dominated by fill rate: additive points, plus bloom and lensing at full resolution. The Video tab (`graphics.js`) sets the pixel ratio: up to 2, 1.5 (the default on touch screens, 44% fewer pixels than 2) or 1, and can turn bloom off. It sets it again when the screen's density changes. There's no MSAA, since everything is drawn into the composer's buffers, which don't use it.
 - **Audio** runs on its own thread, and on a phone it breaks up as soon as that thread misses a deadline, which a busy frame makes more likely. So only the chosen feeding sound runs, every effect is disconnected once it's over, and phones get a bigger buffer (see [Audio](#audio-audiojs)). The 4 s reverb is now the biggest single node, at about a third of the graph's work. A 3 s one would save about a fifth of the total, at the cost of a shorter tail. A mono reverb (`channelCount: 1`) measured slower in Chrome, not faster.
 - **Main-thread stalls during play** used to come from one-off work, which now happens before you play. The audio's slow part is built while the page is idle, and the shaders are compiled at load (see [Startup](#startup)). With the CPU throttled 4×, the first key press now takes about 60 ms, down from 0.9 s, and finishing the music's render takes about 60 ms, down from 0.4 s.
 
@@ -203,7 +205,8 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 - Plain DOM layered over the canvas, at z-index 5. The hints sit at 6 (their letterbox bars at 4, under the HUD), the end-of-game card at 11 and the settings gear at 12.
 - It's kept minimal for immersion: a frameless mass readout with a thin feeding meter, the danger vignette, and edge arrows. There's no intro panel. The only other things on screen during play are the hints, a line under the meter for 4 s when a checkpoint is saved ("Checkpoint · Triangulum core"), and a name at the top of the screen when you get somewhere new. The checkpoint line is one CSS animation, restarted for each checkpoint.
 - **Place names** (`notePlace(text, scale)`) fade in and out at the top centre over 4.5 s: a galaxy or structure the first time you're inside it this run, or, set a little larger, a new band ("Galaxy clusters") the first time your mass reaches it. They queue, so two never talk over each other. Start over clears the queue.
-- Edge arrows are drawn for the five nearest live black holes, and only while they're off screen. They move with `transform` only and never change text, so nothing is measured or laid out per frame.
+- Edge arrows are drawn for the five nearest live black holes, and only while they're off screen. They move with `transform` only and never change text, so nothing is measured or laid out per frame. The five are found with a small insertion list, without sorting or copying `holes`, and the mass text, meter width and vignette opacity are only written when they change.
+- A line in the middle of the screen (`setStatus(paused, hold)`) says **Paused**, or **Retry** with a bar filling up while R is held.
 - Only the end card accepts pointer events, so you can orbit the camera behind it. (The settings gear in the top-left corner belongs to `settings.js`.)
 - The game-over card offers **Retry (R)** and **Start over** once you have a checkpoint, and **Try again (R)** before that. The victory card's **Keep drifting** hides it, and **Play again** starts over.
 - Black holes are named in sentences by `called()`: "the Triangulum core", but "Sagittarius A\*" or "Sköll" (each hole's `article` says which).
@@ -320,8 +323,8 @@ Every sound is synthesised with the Web Audio API. There are no audio files, and
 
 ## Settings (`settings.js`)
 
-- `createSettings()` builds the gear in the top-left corner and its panel, and owns nothing else. The panel is a row of tabs, each showing one page, so no page gets crowded. Each module adds its tab with `addTab(name)`, in the order they're created: the HUD's **Game** tab, the audio's **Sound** tab, then the pointer's **Touch** tab. A tab made with `{ touch: true }` only shows where `(any-pointer: coarse)` matches.
-- Modules fill their page with `addGroup(page, heading)`, `addSwitch(parent, …)`, `addChoices(group, …)` and `addButton(parent, label, key, onClick)`. A button has a line of small print under its label, and the key it's bound to beside it. A group with the `bh-columns` class puts its choices two to a row, as the feeding sounds are. `onClose(callback)` runs something whenever the panel closes, and `close()` closes it.
+- `createSettings()` builds the gear in the top-left corner and its panel, and owns nothing else. The panel is a row of tabs, each showing one page, so no page gets crowded. Each module adds its tab with `addTab(name)`, in the order they're created: the HUD's **Game** tab, the audio's **Sound** tab, the graphics' **Video** tab, then the pointer's **Touch** tab. A tab made with `{ touch: true }` only shows where `(any-pointer: coarse)` matches.
+- Modules fill their page with `addGroup(page, heading)`, `addSwitch(parent, …)`, `addChoices(group, …)` and `addButton(parent, label, key, onClick)`. A button has a line of small print under its label, and the key it's bound to beside it. A group with the `bh-columns` class puts its choices two to a row, as the feeding sounds are. `onClose(callback)` runs something whenever the panel closes, `close()` closes it, and `isOpen` says whether it's open (the game pauses while it is).
 - The tab you picked stays picked while the panel is closed, and the tabs stay at the top while a long page scrolls.
 - Each module keeps its own settings and remembers them with `readFlag` / `writeFlag` / `readChoice` / `writeChoice`, which treat unavailable `localStorage` (private browsing, `file://`) as nothing stored.
 - The panel closes on a click or tap outside it, or Escape. It scrolls when it's taller than the screen, as on a phone held sideways. Inputs blur after each change, so Space and the arrow keys go back to the game.
@@ -331,25 +334,25 @@ Every sound is synthesised with the Web Audio API. There are no audio files, and
 Each core or rival you swallow makes a checkpoint due (`pending` in `game.js`). Step 9 saves it in the first frame where you're alive, nothing heavier is within `CHECKPOINT.safe` (8) of its danger radii (`danger < 1 / safe²`), and no rival is hunting you. So a retry never drops you somewhere you can't get away from. If you're swallowed before it's saved, Retry goes back to the checkpoint before.
 
 - `saveCheckpoint()` copies everything that changes as you play:
-  - each of the opening's fields' alive flags, remaining count and rotation
+  - each of the opening's fields' alive flags (bit-packed with `pack()` from `stream.js`), remaining count and rotation
   - the streamer's deltas (`streamer.save()`, which first notes the state of every cell still built)
   - each black hole by key, with its slot, kind, name, starting mass, mass, sizes, state, eater (by key), fall progress, feeding, side of you, position, velocity and rival AI (its galaxy by key)
   - the disk pool (`disk.save()`, live particles only)
-  - the stats, whether you've won, and the camera's offset and zoom
+  - the stats, the places you've been named (`visited`), whether you've won, and the camera's offset and zoom
 
-  The opening's alive flags are most of it, about 2.5 MB. Only the last checkpoint is kept, in memory, so a reload loses it.
+  The opening's alive flags are most of it, about 77 KB. Only the last checkpoint is kept, in memory, so a reload loses it.
 - `restore()` puts the opening's alive flags back and uploads them whole, like `reset()`. The black holes and cells then go back in this order:
   1. `streamer.load()` drops every record (freeing their cores) and takes the saved deltas.
   2. Every rival is removed and the saved ones are made again.
   3. You go back to where you were, and `streamer.sync()` opens the cells around you, making their cores from the deltas.
-  4. Every saved state goes back to the black hole with its key. Then eaters and rivals' galaxies are relinked by key.
+  4. Every saved state goes back to the black hole with its key. Then eaters and rivals' galaxies are relinked by key. A hole saved falling into something that didn't come back is set back to `alive`.
   5. `disk.load()` moves each particle to its black hole's new slot (a slot-to-slot `remap`).
 
   Jets are cleared, not saved. `disk.load()` sets the draw range to 0 until the next `update()` places the particles and uploads them. The cells' fields arrive from the worker a few frames later, with the stars you'd eaten still gone.
 - `reset()` and `restore()` both end in `resume()`. It puts the camera back on you, clears the jets, drops a checkpoint that was still waiting, hides the end card, ends any slowed moment, re-levels tilt and resets the audio.
-- **R** and Retry call `retry()`: the last checkpoint, or `reset()` if there isn't one. Start over (`startOver()`) forgets the checkpoint and resets.
+- **R** (held while you're alive) and Retry call `retry()`, which also unpauses: the last checkpoint, or `reset()` if there isn't one. Start over (`startOver()`) forgets the checkpoint and resets.
 - Anything you add that changes during play has to be saved and restored here too. Otherwise a retry carries it over from the run you just lost. Changes inside a cell of the endless universe belong in its delta, so they also survive the cell being dropped.
 
 ## Lifecycle
 
-`dispose()` removes the window listeners (keyboard, blur, resize), the pointer and tilt listeners, the audio's unlock and visibility listeners and its idle build, the Start over button's timer, and the HUD, hints, joystick and settings menu elements. It stops the streamer's worker, closes the `AudioContext`, and disposes the post-processing passes, the composer, and every geometry, material and texture in the scene. It leaves the renderer, camera and controls alone, because the host owns them.
+`dispose()` removes the window listeners (keyboard, blur), the Video tab's density and fullscreen listeners, the pointer and tilt listeners, the audio's unlock and visibility listeners and its idle build, the Start over button's timer, and the HUD, hints, joystick and settings menu elements. It stops the streamer's worker, closes the `AudioContext`, and disposes the post-processing passes, the composer, and every geometry, material and texture in the scene. It leaves the renderer, camera and controls alone, because the host owns them.

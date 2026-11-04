@@ -15,3 +15,26 @@ body {
 #app canvas {
   display: block;
 }
+
+/* Shown instead of the game when there's no WebGL 2. */
+.no-webgl {
+  display: grid;
+  place-content: center;
+  gap: 12px;
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+}
+
+.no-webgl h1 {
+  font-size: 22px;
+  font-weight: 500;
+  color: #ffd9b0;
+}
+
+.no-webgl p {
+  max-width: 420px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #b8c0d0;
+}

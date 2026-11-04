@@ -34,6 +34,7 @@ import {
   REACH,
   RINGS,
   RIVAL_APPETITE,
+  RETRY_HOLD,
   RIVAL_PACE,
   SHADOW_SIZE,
   SIDE_CHANGE,
@@ -63,7 +64,7 @@ import {
 import { planUniverse } from './universe.js';
 import { buildFields } from './fields.js';
 import { bandOf, cellAt } from './cosmos.js';
-import { createStreamer } from './stream.js';
+import { createStreamer, pack, unpack } from './stream.js';
 import { queryGrid } from './grid.js';
 import { createHole, dangerRadius, planarDistance, spiralIn, warpToward } from './holes.js';
 import { createDisk } from './disk.js';
@@ -73,6 +74,7 @@ import { createHints } from './hints.js';
 import { createPointer } from './pointer.js';
 import { createAudio } from './audio.js';
 import { createSettings } from './settings.js';
+import { createGraphics } from './graphics.js';
 import { TAU, createStarfield, disposeObject, mulberry32 } from './utils.js';
 
 const { clamp, damp, smoothstep } = THREE.MathUtils;
@@ -99,7 +101,10 @@ export function createGame({ renderer, camera, controls }) {
 
   const random = mulberry32(UNIVERSE_SEED);
   const plan = planUniverse(random);
-  const pixelRatio = renderer.getPixelRatio();
+  // The drawing buffer's size in CSS pixels, and its pixel ratio. Both are read from the renderer every frame, so
+  // the host can resize it however it likes (see fitToRenderer()).
+  const drawSize = renderer.getSize(new THREE.Vector2());
+  let pixelRatio = renderer.getPixelRatio();
 
   const particleMaterial = (vertexShader, uniforms) =>
     new THREE.ShaderMaterial({
@@ -197,8 +202,10 @@ export function createGame({ renderer, camera, controls }) {
     return true;
   }
 
-  // Frees a black hole's slot, and drops its disk. Anything still holding on to it sees it gone.
+  // Frees a black hole's slot, and drops its disk. Anything still holding on to it sees it gone, and anything
+  // still falling into it is let go, to carry on as it was (its size comes back the next frame).
   function removeHole(hole) {
+    for (const other of holes) if (other.eater === hole && other.state === 'falling') Object.assign(other, { state: 'alive', eater: null });
     disk.release(hole.index);
     slots[hole.index] = null;
     holes.splice(holes.indexOf(hole), 1);
@@ -305,13 +312,26 @@ export function createGame({ renderer, camera, controls }) {
   );
   composer.addPass(lensPass);
 
-  const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.75, 0.4, 0.55);
+  const bloomPass = new UnrealBloomPass(drawSize.clone(), 0.75, 0.4, 0.55);
   composer.addPass(bloomPass);
   const outputPass = new OutputPass();
   composer.addPass(outputPass);
 
-  const onResize = () => composer.setSize(window.innerWidth, window.innerHeight);
-  window.addEventListener('resize', onResize);
+  // Follows the renderer's size and pixel ratio, whoever changed them: the host on a resize, the Video tab, or
+  // a move to a screen of another density. Points and ring widths are in screen pixels, so they follow the ratio.
+  function fitToRenderer() {
+    const ratio = renderer.getPixelRatio();
+    const { x, y } = drawSize;
+    renderer.getSize(drawSize);
+    if (ratio === pixelRatio && x === drawSize.x && y === drawSize.y) return;
+    pixelRatio = ratio;
+    composer.setPixelRatio(ratio);
+    composer.setSize(drawSize.x, drawSize.y);
+    fieldUniforms.uSize.value = STAR_SIZE * ratio;
+    disk.points.material.uniforms.uSize.value = STAR_SIZE * ratio;
+    jets.points.material.uniforms.uSize.value = STAR_SIZE * ratio;
+    for (const ring of [reachRing, ...rings]) if (ring) ring.material.uniforms.uWidth.value = RINGS.width * ratio;
+  }
 
   // --- Input --------------------------------------------------------------------
 
@@ -319,15 +339,33 @@ export function createGame({ renderer, camera, controls }) {
   const isDown = (codes) => codes.some((code) => pressed.has(code));
   const axis = (positive, negative) => (isDown(positive) ? 1 : 0) - (isDown(negative) ? 1 : 0);
 
+  // Paused with P or Esc, and while the settings menu is open.
+  let paused = false;
+  // Seconds R has been held while you're alive, or -1 when it isn't. Retrying mid-game takes a hold (RETRY_HOLD),
+  // so a stray press doesn't throw the run away. Once you've been swallowed, a press does it.
+  let retryHeld = -1;
+
   function onKeyDown(event) {
     if (!HANDLED_KEYS.has(event.code)) return;
+    if (event.code === 'Escape' && settings.isOpen) return; // the menu closes instead
     event.preventDefault();
     pressed.add(event.code);
-    if (!event.repeat && KEYS.retry.includes(event.code)) retry();
-    if (!event.repeat && KEYS.mute.includes(event.code)) audio.toggleMute();
+    if (event.repeat) return;
+    if (KEYS.retry.includes(event.code)) {
+      if (player.state === 'alive') retryHeld = 0;
+      else retry();
+    }
+    if (KEYS.mute.includes(event.code)) audio.toggleMute();
+    if (KEYS.pause.includes(event.code)) paused = !paused;
   }
-  const onKeyUp = (event) => pressed.delete(event.code);
-  const onBlur = () => pressed.clear();
+  const onKeyUp = (event) => {
+    pressed.delete(event.code);
+    if (KEYS.retry.includes(event.code)) retryHeld = -1;
+  };
+  const onBlur = () => {
+    pressed.clear();
+    retryHeld = -1;
+  };
 
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
@@ -340,6 +378,8 @@ export function createGame({ renderer, camera, controls }) {
 
   const audio = createAudio({ camera, settings });
 
+  const graphics = createGraphics({ renderer, settings, onBloom: (on) => (bloomPass.enabled = on) });
+
   const pointer = createPointer({ camera, controls, element: renderer.domElement, settings });
 
   const hints = createHints({ controls });
@@ -348,6 +388,8 @@ export function createGame({ renderer, camera, controls }) {
 
   // Back to the last checkpoint, or the start if there isn't one yet (R, or Retry).
   function retry() {
+    paused = false;
+    retryHeld = -1;
     if (checkpoint) restore(checkpoint);
     else reset();
   }
@@ -439,15 +481,15 @@ export function createGame({ renderer, camera, controls }) {
   const SAVED = ['mass', 'shadow', 'size', 'state', 'fallFrom', 'feedRate', 'appetite', 'edible', 'cuedAt'];
 
   // Saves everything that changes as you play: which stars are left (the opening's flag by flag, the cells' as the
-  // streamer's deltas), every black hole, the disks and the stats. Holds on to the camera's angle and zoom too.
-  // A few megabytes, so only the last one is kept.
+  // streamer's deltas, both one bit a star), every black hole, the disks and the stats. Holds on to the camera's
+  // angle and zoom too. Only the last one is kept.
   function saveCheckpoint(victim) {
     pending = null;
     checkpoint = {
       name: victim.name,
       article: victim.article,
       kind: victim.kind,
-      fields: openingFields.map(({ alive, remaining, angle }) => ({ alive: alive.slice(), remaining, angle })),
+      fields: openingFields.map(({ alive, remaining, angle }) => ({ eaten: pack(alive), remaining, angle })),
       cosmos: streamer.save(),
       holes: holes.map((hole) => ({
         ...Object.fromEntries(SAVED.map((key) => [key, hole[key]])),
@@ -463,6 +505,7 @@ export function createGame({ renderer, camera, controls }) {
       })),
       disk: disk.save(),
       stats: { ...stats },
+      visited: [...visited],
       won,
       view: new THREE.Vector3().subVectors(camera.position, controls.target),
       cameraScale,
@@ -474,7 +517,7 @@ export function createGame({ renderer, camera, controls }) {
   function restore(saved) {
     saved.fields.forEach((state, i) => {
       const field = openingFields[i];
-      field.alive.set(state.alive);
+      unpack(state.eaten, field.alive);
       field.remaining = state.remaining;
       field.angle = state.angle;
       field.points.rotation.y = state.angle;
@@ -512,12 +555,16 @@ export function createGame({ renderer, camera, controls }) {
       const hole = keyed.get(state.key);
       if (!hole) continue;
       hole.eater = state.eater ? (keyed.get(state.eater) ?? null) : null;
+      // Falling into something that wasn't brought back: it carries on instead, rather than falling forever.
+      if (hole.state === 'falling' && !hole.eater) hole.state = 'alive';
       if (state.ai) hole.ai = { ...state.ai, galaxy: galaxyByKey(state.ai.galaxy) };
       hole.tint.copy(tintOf(hole));
     }
 
     disk.load(saved.disk, remap);
     Object.assign(stats, saved.stats);
+    visited.clear();
+    for (const key of saved.visited ?? []) visited.add(key);
     won = saved.won;
     resume(saved.view, saved.cameraScale);
   }
@@ -887,7 +934,7 @@ export function createGame({ renderer, camera, controls }) {
   // The smallest radius a ring at `position` can have and still be RINGS.minPixels across on screen.
   function leastRingRadius(position) {
     const depth = -projected.copy(position).applyMatrix4(camera.matrixWorldInverse).z;
-    return depth > camera.near ? (2 * RINGS.minPixels * depth * tanHalfFov()) / window.innerHeight : 0;
+    return depth > camera.near ? (2 * RINGS.minPixels * depth * tanHalfFov()) / drawSize.y : 0;
   }
 
   // Notes a black hole for the lens pass, if it's big enough on screen to matter.
@@ -899,7 +946,7 @@ export function createGame({ renderer, camera, controls }) {
     if (depth <= camera.near) return;
 
     const radius = (0.5 * shadow) / (depth * tanHalfFov()); // fraction of screen height
-    if (radius * window.innerHeight < 0.4) return;
+    if (radius * drawSize.y < 0.4) return;
 
     projected.applyMatrix4(camera.projectionMatrix);
     const u = projected.x * 0.5 + 0.5;
@@ -945,9 +992,19 @@ export function createGame({ renderer, camera, controls }) {
   return {
     scene,
 
-    update(elapsed, frameDelta) {
+    update(elapsed, realDelta) {
+      fitToRenderer();
+      // Paused, the world stands still (game time doesn't pass), but the camera can still be turned.
+      const stopped = paused || settings.isOpen;
+      const frameDelta = stopped ? 0 : realDelta;
       const delta = frameDelta * timeScale;
-      timeLost += frameDelta - delta;
+      timeLost += realDelta - delta;
+
+      if (retryHeld >= 0) {
+        retryHeld += realDelta;
+        if (retryHeld >= RETRY_HOLD || player.state !== 'alive') retry();
+      }
+      hud.setStatus(stopped && !settings.isOpen, retryHeld > 0 ? retryHeld / RETRY_HOLD : 0);
       if (player.state === 'alive') stats.time += delta;
 
       // Sizes ease toward what the mass calls for; falling black holes shrink as they near their eater.
@@ -1107,7 +1164,7 @@ export function createGame({ renderer, camera, controls }) {
 
       candidateCount = 0;
       lensPass.uniforms.uAspect.value = camera.aspect;
-      lensPass.uniforms.uPixel.value = 1 / (window.innerHeight * renderer.getPixelRatio());
+      lensPass.uniforms.uPixel.value = 1 / (drawSize.y * pixelRatio);
       for (const hole of holes) {
         if (hole.state === 'gone') continue;
         const brightness = hole.kind === 'core' ? 0.35 : (hole === player ? 0.5 : 0.4) + 2 * hole.appetite;
@@ -1118,7 +1175,7 @@ export function createGame({ renderer, camera, controls }) {
       if (player.state !== 'alive') danger = 0;
       hud.update({ camera, player, holes, danger });
       timeScale = hints.update(frameDelta, { camera, player, holes, touch: pointer.mode });
-      audio.update(frameDelta, { player, danger, stars: absorbed.count[player.index], timeScale });
+      audio.update(realDelta, { player, danger, stars: absorbed.count[player.index], timeScale: stopped ? 0 : timeScale });
     },
 
     render(delta) {
@@ -1129,10 +1186,10 @@ export function createGame({ renderer, camera, controls }) {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
-      window.removeEventListener('resize', onResize);
       streamer.dispose();
       pointer.dispose();
       audio.dispose();
+      graphics.dispose();
       hud.dispose();
       hints.dispose();
       settings.dispose();

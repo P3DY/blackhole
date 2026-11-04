@@ -157,6 +157,11 @@ export function createSettings() {
       open(false);
     },
 
+    // Whether the panel is showing. The game pauses while it is.
+    get isOpen() {
+      return !panel.hidden;
+    },
+
     dispose() {
       window.removeEventListener('pointerdown', onOutside);
       window.removeEventListener('keydown', onKey);

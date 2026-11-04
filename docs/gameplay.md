@@ -14,7 +14,7 @@ You lose when something heavier swallows you. The game-over card shows your run'
 
 Every core or rival you swallow saves a checkpoint, as soon as it's safe: nothing heavier within 8 of its danger radii (`CHECKPOINT.safe`), and no rival hunting you. That way a retry never puts you somewhere you can't escape. A line under your mass says "Checkpoint ·" and what you swallowed, then fades.
 
-- **Retry** goes back to the last checkpoint: every star, black hole, accretion disk and stat as it was then. **R** does the same, as does Retry on the game-over card or in the Game tab of the settings menu. With no checkpoint yet, it starts from the beginning.
+- **Retry** goes back to the last checkpoint: every star, black hole, accretion disk and stat as it was then. **R** does the same, as does Retry on the game-over card or in the Game tab of the settings menu. While you're alive, R has to be held for `RETRY_HOLD` (0.8 s), with a bar in the middle of the screen filling up, so a stray press next to WASD can't throw the run away. Once you've been swallowed, a press does it. With no checkpoint yet, it starts from the beginning.
 - **Start over** goes back to the beginning and throws the checkpoint away. In the settings menu it asks for a second press.
 - Only the last checkpoint is kept, and only until you reload the page.
 - What you changed in the endless universe is kept too, even in places you've left far behind: a retry finds the stars you'd eaten there still gone, and the cores you'd swallowed still missing.
@@ -185,9 +185,11 @@ The HUD is deliberately sparse. Apart from the hints, nothing pops up during pla
 - **Checkpoint note:** a line under your mass for a few seconds when a checkpoint is saved.
 - **Place names:** at the top of the screen, the name of a galaxy or structure the first time you're inside it this run, and the name of a new scale ("Galaxy clusters") the first time your mass reaches it.
 - **End card:** peak mass, stars, cores swallowed, rivals swallowed, the largest structures you reached, and time.
+- **Pause:** **P** or **Esc** pauses the game, and so does opening the settings menu. Game time stops, but you can still turn the camera, and the sound goes muffled.
 - **Settings:** a faint gear in the top-left corner opens a menu with tabs:
   - **Game:** Retry (**R**), with what it goes back to, and Start over.
   - **Sound:** switches for Sound, Music and Effects, and a choice of feeding sound. **M** toggles Sound.
+  - **Video:** the resolution (Sharp, Balanced or Fast: up to 2, 1.5 or 1 screen pixels per CSS pixel; touch screens start on Balanced), a Bloom switch, and Full screen where the browser offers it.
   - **Touch** (touch screens only): how you steer (see [Touch controls](#touch-controls)).
 
 ## Touch controls

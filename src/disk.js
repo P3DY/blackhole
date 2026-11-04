@@ -15,13 +15,15 @@ export function createDisk(material) {
   const owners = new Uint8Array(capacity); // so at most 256 black hole slots
 
   const geometry = new THREE.BufferGeometry();
-  const attributes = [
-    ['position', new THREE.BufferAttribute(positions, 3)],
-    ['aColor', new THREE.BufferAttribute(colors, 3)],
-    ['aScale', new THREE.BufferAttribute(scales, 1)],
-    ['aHole', new THREE.BufferAttribute(holeData, 4)],
-  ];
-  for (const [name, attribute] of attributes) geometry.setAttribute(name, attribute.setUsage(THREE.DynamicDrawUsage));
+  // Positions and black holes move every frame. Colors and scales only change as particles come and go, so
+  // they're uploaded only then.
+  const moving = [new THREE.BufferAttribute(positions, 3), new THREE.BufferAttribute(holeData, 4)];
+  const settled = [new THREE.BufferAttribute(colors, 3), new THREE.BufferAttribute(scales, 1)];
+  geometry.setAttribute('position', moving[0].setUsage(THREE.DynamicDrawUsage));
+  geometry.setAttribute('aHole', moving[1].setUsage(THREE.DynamicDrawUsage));
+  geometry.setAttribute('aColor', settled[0].setUsage(THREE.DynamicDrawUsage));
+  geometry.setAttribute('aScale', settled[1].setUsage(THREE.DynamicDrawUsage));
+  let changed = false; // whether colors or scales have changed since they were last uploaded
   geometry.setDrawRange(0, 0);
 
   const points = new THREE.Points(geometry, material);
@@ -58,6 +60,7 @@ export function createDisk(material) {
       scales[i] = scale;
       masses[i] = mass;
       owners[i] = hole.index;
+      changed = true;
     },
 
     // Moves every particle along a spiral around its black hole (carried along as that moves) and absorbs
@@ -111,11 +114,12 @@ export function createDisk(material) {
 
       geometry.setDrawRange(0, disk.count);
       if (disk.count > 0) {
-        for (const [, attribute] of attributes) {
+        for (const attribute of changed ? [...moving, ...settled] : moving) {
           attribute.clearUpdateRanges();
           attribute.addUpdateRange(0, disk.count * attribute.itemSize);
           attribute.needsUpdate = true;
         }
+        changed = false;
       }
       return absorbed;
     },
@@ -165,12 +169,14 @@ export function createDisk(material) {
         else owners[i] = slot;
       }
       geometry.setDrawRange(0, 0); // until update() has placed them around their black holes
+      changed = true;
     },
   };
 
   function remove(i) {
     const last = --disk.count;
     if (i === last) return;
+    changed = true;
     positions.copyWithin(i * 3, last * 3, last * 3 + 3);
     velocities.copyWithin(i * 3, last * 3, last * 3 + 3);
     colors.copyWithin(i * 3, last * 3, last * 3 + 3);

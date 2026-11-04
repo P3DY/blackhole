@@ -48,6 +48,7 @@ export function createHud({ settings, onRetry, onStartOver }) {
     <div class="bh-vignette"></div>
     <div class="bh-markers"></div>
     <div class="bh-place"></div>
+    <div class="bh-status" hidden><span></span><small></small><i></i></div>
     <div class="bh-readout">
       <div class="bh-mass"></div>
       <div class="bh-meter"><span></span></div>
@@ -72,6 +73,10 @@ export function createHud({ settings, onRetry, onStartOver }) {
   const mass = $('.bh-mass');
   const meter = $('.bh-meter span');
   const saved = $('.bh-saved');
+  const status = $('.bh-status');
+  const statusTitle = $('.bh-status span');
+  const statusNote = $('.bh-status small');
+  const statusBar = $('.bh-status i');
   saved.addEventListener('animationend', () => saved.classList.remove('show'));
 
   // Place names wait their turn, so a new scale and the structure you're entering don't talk over each other.
@@ -126,6 +131,26 @@ export function createHud({ settings, onRetry, onStartOver }) {
 
   const view = new THREE.Vector3();
   const ndc = new THREE.Vector3();
+  const nearest = []; // the closest few black holes this frame, reused
+  const last = { mass: '', meter: '', vignette: '' }; // what's on screen, so it's only written when it changes
+
+  // Keeps the `count` black holes in `holes` nearest to `player` in `nearest`, closest first, without sorting
+  // (or copying) the whole list every frame.
+  function findNearest(holes, player, count) {
+    nearest.length = 0;
+    for (const hole of holes) {
+      if (hole === player || hole.state !== 'alive') continue;
+      const distance = hole.position.distanceToSquared(player.position);
+      if (nearest.length === count && distance >= nearest[count - 1].distance) continue;
+      let i = Math.min(nearest.length, count - 1);
+      if (nearest.length < count) nearest.push(null);
+      while (i > 0 && nearest[i - 1].distance > distance) {
+        nearest[i] = nearest[i - 1];
+        i--;
+      }
+      nearest[i] = { hole, distance };
+    }
+  }
 
   // Pins the arrow to the screen edge, pointing toward `hole`, or hides it when the hole is on screen.
   function placeMarker(marker, hole, camera) {
@@ -179,17 +204,18 @@ export function createHud({ settings, onRetry, onStartOver }) {
 
   const hud = {
     update({ camera, player, holes, danger }) {
-      mass.textContent = formatMass(player.mass);
-      meter.style.width = `${(player.appetite * 100).toFixed(1)}%`;
-      vignette.style.opacity = smoothstep(danger, 0.2, 1).toFixed(3);
+      const text = formatMass(player.mass);
+      if (text !== last.mass) mass.textContent = last.mass = text;
+      const width = `${(player.appetite * 100).toFixed(1)}%`;
+      if (width !== last.meter) meter.style.width = last.meter = width;
+      const opacity = smoothstep(danger, 0.2, 1).toFixed(2);
+      if (opacity !== last.vignette) vignette.style.opacity = last.vignette = opacity;
 
-      const nearest = holes
-        .filter((hole) => hole !== player && hole.state === 'alive')
-        .sort((a, b) => a.position.distanceToSquared(player.position) - b.position.distanceToSquared(player.position));
+      if (player.state === 'alive') findNearest(holes, player, markers.length);
+      else nearest.length = 0;
       markers.forEach((marker, i) => {
-        const hole = player.state === 'alive' ? nearest[i] : undefined;
-        if (hole) placeMarker(marker, hole, camera);
-        else marker.hidden = true;
+        if (nearest[i]) placeMarker(marker, nearest[i].hole, camera);
+        else if (!marker.hidden) marker.hidden = true;
       });
     },
 
@@ -245,6 +271,20 @@ export function createHud({ settings, onRetry, onStartOver }) {
     clearPlaces() {
       places.length = 0;
       nextPlace();
+    },
+
+    // A line in the middle of the screen while the game is paused, or while R is held to retry (`hold`, 0–1, how
+    // long it's been held). Neither: hidden.
+    setStatus(paused, hold) {
+      const show = paused || hold > 0;
+      if (status.hidden === show) status.hidden = !show;
+      if (!show) return;
+      const title = hold > 0 ? 'Retry' : 'Paused';
+      if (statusTitle.textContent !== title) {
+        statusTitle.textContent = title;
+        statusNote.textContent = hold > 0 ? 'keep holding R' : 'P or Esc to carry on';
+      }
+      statusBar.style.width = `${(Math.min(hold, 1) * 100).toFixed(0)}%`;
     },
 
     hideOverlay() {
