@@ -932,6 +932,14 @@ export function createGame({ renderer, camera, controls }) {
 
   reset();
 
+  // Every shader is compiled now, while the game loads. Otherwise the rings' would wait until the first one shows,
+  // and on a phone compiling it stalls that frame, just as a black hole comes near. compile() includes hidden
+  // objects. It's done with the composer's buffer bound, since the scene is drawn into that rather than the
+  // screen, and the shaders for each differ.
+  renderer.setRenderTarget(composer.renderTarget1);
+  renderer.compile(scene, camera);
+  renderer.setRenderTarget(null);
+
   // --- Frame --------------------------------------------------------------------
 
   return {
