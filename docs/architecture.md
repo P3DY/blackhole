@@ -122,7 +122,7 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 
 - These are static geometry. Only the `Points` object's `rotation.y` changes.
 - Each field has its own `ShaderMaterial`. They all share the `uSize`, `uTime`, `uWarps` and `uWarpCount` uniform objects, so three.js compiles one program for all of them. A field's own `uFade` dims it as you outgrow it.
-- **Captured stars** are hidden by a per-particle `aAlive` byte (a normalized `Uint8Array`, so the shader still reads a float 0 or 1). The shader moves dead points outside the clip volume. Only the changed index range (`dirtyMin…dirtyMax`) is uploaded each frame, through `BufferAttribute.addUpdateRange()`. A field with nothing left is hidden.
+- **Captured stars** are hidden by a per-particle `aAlive` float (a normalized `Uint8Array` was tried, and drew no stars at all). The shader moves dead points outside the clip volume. Only the changed index range (`dirtyMin…dirtyMax`) is uploaded each frame, through `BufferAttribute.addUpdateRange()`. A field with nothing left is hidden.
 - **Gravity warp.** Within 2.2× reach of up to 8 roaming holes, stars are drawn pulled in, twisted and flattened. `warpToward()` in `holes.js` is the **exact CPU mirror** of this shader code, so a captured star starts its orbit precisely where it was drawn. If you change the warp in one place, change it in the other.
 - Points below one pixel are drawn one pixel wide and dimmed instead, which stops them flickering.
 

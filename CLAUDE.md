@@ -56,6 +56,6 @@ These docs quote numbers derived from `config.js` (tier tables, rival masses, st
 - **Balance rules:**
   - `1 + STARS_MASS + CORE_MASS` should stay close to `TIER_GROWTH³`.
   - `∛(1 / HUNT_PREY) · e^((HAWKING + BOOST_COST) · HUNT_TIME / 3) · RIVAL_PACE.hunt < BOOST` must hold, or some hunts can't be escaped (boosting costs mass, which makes you slower).
-- **Partial GPU uploads.** Captured stars are hidden through a per-particle `aAlive` attribute (a normalized `Uint8Array`), and only the dirty index range is uploaded (`addUpdateRange`). The disk pool keeps live particles packed in `[0, count)`. Keep these patterns when you touch those buffers.
+- **Partial GPU uploads.** Captured stars are hidden through a per-particle `aAlive` attribute (a `Float32Array`: a normalized `Uint8Array` was tried and drew no stars at all), and only the dirty index range is uploaded (`addUpdateRange`). The disk pool keeps live particles packed in `[0, count)`. Keep these patterns when you touch those buffers.
 - **One shader, a material per field.** Every star field has its own `ShaderMaterial` for its `uFade`, sharing the other uniforms' objects (`fieldUniforms` in `game.js`), so three.js compiles a single program. Write shared uniforms to `fieldUniforms`, not to one field's material.
 - **`dispose()` doesn't own the host's objects.** It removes the game's listeners, HUD and GPU resources, and stops the streamer's worker, but leaves the camera and controls alone. The renderer's pixel ratio is the one thing it changes (the Video tab).
