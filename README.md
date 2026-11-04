@@ -35,7 +35,7 @@ Then open the URL Vite prints (http://localhost:5173 by default).
 | Gear menu (top left), Game tab | **Retry**, or **Start over** from the beginning (press it twice, since it throws your checkpoint away) |
 | **M** / gear menu, Sound tab | Mute or unmute. The Sound tab also mutes music or effects on their own. Settings are remembered |
 | Feeding, in the Sound tab | Pick the sound you hear while you feed: Crackle, Tuned (default), Drone, Rain, Whoosh or Gulps. Picking one plays it for a moment. Your choice is remembered |
-| Gear menu, Video tab | Resolution (Sharp, Balanced or Fast), bloom, and full screen where the browser allows it. Remembered |
+| Gear menu, Video tab | Resolution (Sharp, Balanced or Fast), whether it drops while the frame rate does (**Adapt to frame rate**, on by default), bloom, and full screen where the browser allows it. Remembered |
 
 On a touch screen:
 
@@ -92,6 +92,7 @@ src/
   pointer.js        mouse and touch steering: joystick, follow-finger and tilt modes
   settings.js / .css the gear menu: tabs that the HUD, the audio, the graphics and the touch settings fill
   graphics.js       the Video tab: resolution (the pixel ratio), bloom, full screen
+  pacer.js          lowers the resolution while frames are slow, and raises it again when there's room
   audio.js          synthesised music loop, ambience and sound effects
   hud.js / hud.css  DOM overlay: mass readout, edge arrows, vignette, checkpoint note, end card, Game tab
   hints.js / .css   control lessons as looping gestures, and the slowed moments that explain weight

@@ -16,7 +16,6 @@ Nothing pending.
 
 ### Phones
 
-- **Graphics.** The Video tab now caps the pixel ratio (1.5 by default on touch screens) and can turn bloom off. If the game still stutters on a phone, the next step is to scale the resolution with the frame time. `fitToRenderer()` in `game.js` already follows any change to the renderer's pixel ratio, so it would only need something to watch the frame time and call `renderer.setPixelRatio()`, with some hysteresis.
 - **A shorter reverb.** The live reverb's 4 s impulse is now about a third of the audio thread's work. A 3 s one would save about a fifth of the total, at the cost of an audibly shorter tail. A mono reverb (`channelCount: 1`) measured slower in Chrome, not faster.
 - **`update()` on a slow CPU.** With the CPU throttled 4×, `update()` took 4–6.5 ms at the median but 12–17 ms at the 95th percentile and 18–31 ms at the 99th, a frame's whole budget at 60 Hz. The software renderer was competing for the same cores, so these are pessimistic. Profiling on a real phone (Chrome remote debugging) would show whether it matters. `disk.update()` and the capture queries are where to look.
 
@@ -37,6 +36,7 @@ Nothing pending.
 
 Since the review:
 
+- **The resolution adapts to the frame rate** (`pacer.js`, on by default in the Video tab): it drops a step at a time while the game runs under about 50 fps, keeps a step only if it helped, and climbs back when there's room. Its thresholds haven't been tried on a real phone yet.
 - **Loading.** The opening's stars are built in the worker, behind a loading screen, so the page no longer freezes for 2 s (4× throttled) while it loads. The longest task left is 0.5–0.7 s.
 - **Checkpoints survive a reload.** `save.js` keeps the last one in IndexedDB, and the game carries on from it when it starts. The smoke test saves one, reloads and checks that what comes back matches.
 - **Retry could freeze the game.** `removeHole()` now lets go of anything falling into the hole it removes, and `restore()` does the same for a hole saved falling into something that didn't come back. Checked by making one rival fall into another, removing the eater, then saving and retrying: no errors, and frames kept coming.

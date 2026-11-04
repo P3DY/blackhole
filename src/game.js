@@ -1235,6 +1235,7 @@ export function createGame({ renderer, camera, controls, opening: prebuilt }) {
       if (player.state !== 'alive') danger = 0;
       hud.update({ camera, player, holes, danger });
       timeScale = hints.update(frameDelta, { camera, player, holes, touch: pointer.mode });
+      graphics.update();
       audio.update(realDelta, { player, danger, stars: absorbed.count[player.index], timeScale: stopped ? 0 : timeScale });
     },
 
