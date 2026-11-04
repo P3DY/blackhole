@@ -185,7 +185,7 @@ The HUD is deliberately sparse. Apart from the hints, nothing pops up during pla
 - **Checkpoint note:** a line under your mass for a few seconds when a checkpoint is saved.
 - **Place names:** at the top of the screen, the name of a galaxy or structure the first time you're inside it this run, and the name of a new scale ("Galaxy clusters") the first time your mass reaches it.
 - **End card:** peak mass, stars, cores swallowed, rivals swallowed, the largest structures you reached, and time.
-- **Pause:** **P** or **Esc** pauses the game, and so does opening the settings menu. Game time stops, but you can still turn the camera, and the sound goes muffled.
+- **Pause:** **P** or **Esc** pauses the game, and so does opening the settings menu. With a keyboard, switching to another window while you're alive pauses it too (touch screens skip this, having no key to carry on). Game time stops, but you can still turn the camera, and the sound goes muffled.
 - **Settings:** a faint gear in the top-left corner opens a menu with tabs:
   - **Game:** Retry (**R**), with what it goes back to, and Start over.
   - **Sound:** switches for Sound, Music and Effects, and a choice of feeding sound. **M** toggles Sound.

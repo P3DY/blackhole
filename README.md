@@ -31,7 +31,7 @@ Then open the URL Vite prints (http://localhost:5173 by default).
 | Left-drag | Orbit the camera. You hold your course while you drag |
 | Scroll | Zoom |
 | **R** | Retry from your last checkpoint (or from the start, if you haven't reached one). While you're alive, hold it for a moment, so a stray press can't throw the run away |
-| **P** / **Esc** | Pause, or carry on. The game also pauses while the settings menu is open |
+| **P** / **Esc** | Pause, or carry on. The game also pauses while the settings menu is open, and (with a keyboard) when you switch to another window |
 | Gear menu (top left), Game tab | **Retry**, or **Start over** from the beginning (press it twice, since it throws your checkpoint away) |
 | **M** / gear menu, Sound tab | Mute or unmute. The Sound tab also mutes music or effects on their own. Settings are remembered |
 | Feeding, in the Sound tab | Pick the sound you hear while you feed: Crackle, Tuned (default), Drone, Rain, Whoosh or Gulps. Picking one plays it for a moment. Your choice is remembered |
