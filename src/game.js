@@ -61,8 +61,7 @@ import {
   ringVertexShader,
   starFragmentShader,
 } from './shaders.js';
-import { planUniverse } from './universe.js';
-import { buildFields } from './fields.js';
+import { buildOpening, fieldsOf } from './fields.js';
 import { bandOf, cellAt } from './cosmos.js';
 import { createStreamer, pack, unpack } from './stream.js';
 import { queryGrid } from './grid.js';
@@ -76,7 +75,7 @@ import { createAudio } from './audio.js';
 import { createSettings } from './settings.js';
 import { createGraphics } from './graphics.js';
 import { createSaves, fits } from './save.js';
-import { TAU, createStarfield, disposeObject, mulberry32 } from './utils.js';
+import { TAU, createStarfield, disposeObject } from './utils.js';
 
 const { clamp, damp, smoothstep } = THREE.MathUtils;
 
@@ -85,9 +84,11 @@ const HANDLED_KEYS = new Set(Object.values(KEYS).flat());
 // What the end card says you reached while you're still among the opening's galaxies.
 const OPENING_TITLE = 'Galaxies';
 
-// Builds the whole game into a new scene and takes over the camera and controls it's given.
+// Builds the whole game into a new scene and takes over the camera and controls it's given. `opening` is the
+// opening's { plan, parts } from loadOpening() (opening.js); without it, the opening is built here, which takes
+// a couple of seconds on a phone.
 // Call update() then render() every frame, and dispose() to tear it all down.
-export function createGame({ renderer, camera, controls }) {
+export function createGame({ renderer, camera, controls, opening: prebuilt }) {
   controls.enablePan = false; // the camera stays on the black hole
   controls.minPolarAngle = 0.15; // straight down would leave no "forward" to steer by
   controls.maxPolarAngle = Math.PI * 0.47;
@@ -100,8 +101,8 @@ export function createGame({ renderer, camera, controls }) {
   backdrop.material.depthWrite = false;
   scene.add(backdrop);
 
-  const random = mulberry32(UNIVERSE_SEED);
-  const plan = planUniverse(random);
+  // The opening, as loadOpening() (opening.js) made it off the main thread, or built here if it wasn't given.
+  const { plan, parts: openingParts } = prebuilt ?? buildOpening();
   // The drawing buffer's size in CSS pixels, and its pixel ratio. Both are read from the renderer every frame, so
   // the host can resize it however it likes (see fitToRenderer()).
   const drawSize = renderer.getSize(new THREE.Vector2());
@@ -136,7 +137,7 @@ export function createGame({ renderer, camera, controls }) {
     });
 
   // The opening's fields are here for good. Past it, the streamer adds fields to `fields` and takes them out again.
-  const openingFields = buildFields(plan, random, fieldMaterial);
+  const openingFields = fieldsOf(openingParts, fieldMaterial);
   const fields = [...openingFields];
   for (const field of fields) scene.add(field.points);
 

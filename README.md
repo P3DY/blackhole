@@ -81,7 +81,8 @@ src/
   cosmos.js         the endless universe past it: rings of cells, each a structure (plain data)
   names.js          real names for each scale, and catalogue-style designations
   stream.js         builds the cells around you and drops the ones left behind, remembering what you ate
-  builder.js        worker that builds a cell's particles off the main thread
+  builder.js        worker that builds star fields off the main thread: the cells', and the opening's at load
+  opening.js        loads the opening's fields from that worker, behind the loading screen
   fields.js         star fields: spiral, elliptical, group, cluster, supercluster, wall, nebula and loose-star geometry
   grid.js           spatial grid used to find stars within reach
   holes.js          black hole objects and the shared gravity helpers

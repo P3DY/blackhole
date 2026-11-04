@@ -5,7 +5,8 @@ How the code is put together: what runs each frame, how everything is drawn, how
 ## Modules
 
 ```
-main.js ──► game.js ──┬─► config.js        constants (imported by most modules)
+main.js ──► opening.js ──► builder.js   loadOpening: the opening's fields, built in a worker
+        └─► game.js ──┬─► config.js        constants (imported by most modules)
                       ├─► universe.js      planUniverse(random) → the opening, as plain data
                       ├─► cosmos.js ──► names.js   cellAt, cellsNear: the universe past it, as plain data
                       ├─► stream.js ──► builder.js (a worker running cosmos.js and fields.js)   createStreamer
@@ -25,7 +26,7 @@ main.js ──► game.js ──┬─► config.js        constants (imported b
                       └─► utils.js         mulberry32, seedOf, createStarfield, disposeObject
 ```
 
-- **`main.js`** is the host. It creates the `WebGLRenderer`, the `PerspectiveCamera` (60° fov, near 0.1 and far 5000 to start, which the game scales as you grow; see [The frame](#the-frame)) and `OrbitControls` with damping. It calls `createGame()` and runs the loop, clamping each frame's delta to 0–0.1 s: a backgrounded tab doesn't jump forward, and the first frame, whose timestamp can come before the start time, doesn't run backward. In development it puts `{ renderer, camera, scene, debug }` on `window.blackHole` for poking at from the console. `debug` is for the smoke test (see [Checkpoints](#checkpoints)).
+- **`main.js`** is the host. It creates the `WebGLRenderer`, the `PerspectiveCamera` (60° fov, near 0.1 and far 5000 to start, which the game scales as you grow; see [The frame](#the-frame)) and `OrbitControls` with damping. It waits for `loadOpening()` (see [Startup](#startup)), calls `createGame()` with the result and runs the loop, clamping each frame's delta to 0–0.1 s: a backgrounded tab doesn't jump forward, and the first frame, whose timestamp can come before the start time, doesn't run backward. In development it puts `{ renderer, camera, scene, debug }` on `window.blackHole` for poking at from the console. `debug` is for the smoke test (see [Checkpoints](#checkpoints)).
 - **`game.js`** holds `createGame({ renderer, camera, controls })`, a closure that owns all game state. It returns `{ scene, update, render, dispose }`, and `debug` in development. The rival AI, capture, movement and camera code live in it because they share that state.
 - Every other module is a factory or a set of pure helpers with no game state of its own. The factories keep only the state of what they make: the disk and jet pools, and the streamer's records of the cells around you (see [The endless universe](#the-endless-universe)).
 
@@ -45,14 +46,16 @@ Every black hole has a **slot** (see [Hole slots](#hole-slots)), stored on it as
 
 ## Startup
 
-1. `mulberry32(UNIVERSE_SEED)` gives a seeded random stream.
-2. `planUniverse(random)` lays out the opening as plain objects: the main path, side trips, nebulae, start point and rival spawns.
-3. `buildFields(plan, random, fieldMaterial)` builds geometry for every field of the opening **from the same random stream**, each with its own material. It also builds each field's spatial grid once. These fields stay for good.
+`index.html` shows a loading screen (inline styles, so it's there before the script arrives), and `main.js` keeps it until the first frame has been drawn, then fades it out.
+
+1. `loadOpening()` (`opening.js`) asks a worker (`builder.js`, the cells' builder, in a worker of its own) for the opening's fields. There, `buildOpening()` (`fields.js`) takes a seeded stream, `mulberry32(UNIVERSE_SEED)`, plans the opening with `planUniverse(random)` and then builds the particles of every field and its spatial grid with `buildOpeningParts(plan, random)` **from the same stream**, and hands the arrays back. That's about 2 s of work with the CPU throttled 4×, so on the main thread it would freeze the page. Meanwhile `loadOpening()` makes its own copy of the plan, which is quick and the same, since it starts the same stream. If the worker can't start or fails, `buildOpening()` runs on the main thread instead.
+2. `planUniverse()` lays out the opening as plain objects: the main path, side trips, nebulae, start point and rival spawns.
+3. `createGame()` turns the parts into fields with `fieldsOf()`, each with its own material, as it does for cells. These fields stay for good. Without `opening`, it builds them itself with `buildOpening()`.
 4. The player and the opening's cores take the first slots. The disk pool, the jet pool, the streamer (which starts its worker), the post-processing chain, the HUD and the hints are created.
 5. `reset()` puts everything at its starting state. For the opening it rebuilds nothing: it only refills the alive flags, restores the holes and clears the pools. It makes the opening's rivals afresh, clears the streamer, and has it open the cells around you, of which there are none at the start. Retrying from a checkpoint works much the same way (see [Checkpoints](#checkpoints)).
 6. `renderer.compile()` compiles every shader in the scene, hidden objects included, with the composer's buffer bound (the scene is drawn into that, not the screen, and three.js builds different shaders for each). Otherwise the rings' shader would compile the first time a ring shows, just as a black hole comes near, and on a phone that stalls the frame. Black holes added later share it, so nothing compiles during play.
 
-Because steps 2 and 3 share one random stream, any change that consumes a different number of random values in `planUniverse` changes all of the opening's galaxy geometry after it. The cells past the opening don't use that stream: each has streams of its own (see [The endless universe](#the-endless-universe)). Rival timers and jets use `Math.random()`, so runs differ slightly even though the universe is fixed.
+Because the plan and the fields share one random stream, any change that consumes a different number of random values in `planUniverse` changes all of the opening's galaxy geometry after it. `test/opening.test.js` checks that the plan made alone matches the worker's, and that the fields come out the same each time. The cells past the opening don't use that stream: each has streams of its own (see [The endless universe](#the-endless-universe)). Rival timers and jets use `Math.random()`, so runs differ slightly even though the universe is fixed.
 
 ## The endless universe
 
@@ -199,6 +202,7 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 - **Fields are frustum-culled** as whole `Points` objects, so only fields in view cost vertex work, and faded fields are hidden. The four giants past Andromeda are capped at 60,000 stars each (`MAX_GALAXY_STARS` in `universe.js`), and each cell's structure has 24,000. Their stars are drawn bigger to match, so they look about as full without the load.
 - **GPU cost** is dominated by fill rate: additive points, plus bloom and lensing at full resolution. The Video tab (`graphics.js`) sets the pixel ratio: up to 2, 1.5 (the default on touch screens, 44% fewer pixels than 2) or 1, and can turn bloom off. It sets it again when the screen's density changes. There's no MSAA, since everything is drawn into the composer's buffers, which don't use it.
 - **Audio** runs on its own thread, and on a phone it breaks up as soon as that thread misses a deadline, which a busy frame makes more likely. So only the chosen feeding sound runs, every effect is disconnected once it's over, and phones get a bigger buffer (see [Audio](#audio-audiojs)). The 4 s reverb is now the biggest single node, at about a third of the graph's work. A 3 s one would save about a fifth of the total, at the cost of a shorter tail. A mono reverb (`channelCount: 1`) measured slower in Chrome, not faster.
+- **Loading.** With the CPU throttled 4×, the longest main-thread task while loading went from 1.8–2.4 s to 0.5–0.7 s once the opening was built in the worker. What's left is the script itself, wrapping the arrays in geometry, compiling shaders and the first frame's uploads, behind the loading screen.
 - **Main-thread stalls during play** used to come from one-off work, which now happens before you play. The audio's slow part is built while the page is idle, and the shaders are compiled at load (see [Startup](#startup)). With the CPU throttled 4×, the first key press now takes about 60 ms, down from 0.9 s, and finishing the music's render takes about 60 ms, down from 0.4 s.
 
 ## HUD (`hud.js`)

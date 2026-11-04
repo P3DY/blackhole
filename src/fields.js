@@ -1,35 +1,44 @@
 import * as THREE from 'three';
-import { NEBULA_COLORS, arrivalMass, radiusOf, tierOf } from './config.js';
+import { NEBULA_COLORS, UNIVERSE_SEED, arrivalMass, radiusOf, tierOf } from './config.js';
 import { buildGrid } from './grid.js';
+import { planUniverse } from './universe.js';
 import { TAU, mulberry32 } from './utils.js';
 
 const { lerp } = THREE.MathUtils;
 
-// Turns the universe plan into star fields: one per galaxy, one per nebula, and the loose stars between.
-// `material()` makes each one's material. They all share one shader, but each fades out on its own as you
-// outgrow it.
-export function buildFields(plan, random, material) {
-  const fields = [];
+// The opening: its plan, and the parts of its star fields (see buildOpeningParts). The two share one seeded stream,
+// so wherever the fields are built, the plan is made there too, first, the same as everywhere else.
+export function buildOpening() {
+  const random = mulberry32(UNIVERSE_SEED);
+  const plan = planUniverse(random);
+  return { plan, parts: buildOpeningParts(plan, random) };
+}
+
+// The opening's star fields, from the universe plan, as plain arrays like a cell's (see buildCellParts): one part
+// per galaxy, one per nebula, and the loose stars between. `random` must be the stream planUniverse() drew from,
+// carried on. It takes a couple of seconds on a phone, so it's done off the main thread (opening.js).
+export function buildOpeningParts(plan, random) {
+  const parts = [];
+  const part = (particles, masses, { x = 0, z = 0, spinRate = 0, tier = 0 }) => {
+    parts.push({ particles, masses, grid: buildGrid(particles.positions, masses.length), x, z, spinRate, tier });
+  };
 
   for (const galaxy of plan.galaxies) {
     const stars = spiralParticles(galaxy, random);
     // Bigger galaxies are seen from further away, so their stars are drawn bigger to match.
     for (let i = 0; i < stars.scales.length; i++) stars.scales[i] *= galaxy.radius / 4;
-    const masses = new Float32Array(galaxy.count).fill(galaxy.starsMass / galaxy.count);
-    fields.push(createField(stars, masses, material(), { ...galaxy, tier: tierOf(galaxy.radius) }));
+    part(stars, new Float32Array(galaxy.count).fill(galaxy.starsMass / galaxy.count), { ...galaxy, tier: tierOf(galaxy.radius) });
   }
 
   for (const nebula of plan.nebulae) {
-    const masses = new Float32Array(nebula.count).fill(nebula.mass / nebula.count);
-    fields.push(createField(nebulaParticles(nebula, random), masses, material(), nebula));
+    part(nebulaParticles(nebula, random), new Float32Array(nebula.count).fill(nebula.mass / nebula.count), nebula);
   }
 
   // The loose stars between them fade with the biggest galaxy.
   const loose = looseStars(plan.galaxies, random);
-  const tier = Math.max(...plan.galaxies.map((galaxy) => tierOf(galaxy.radius)));
-  fields.push(createField(loose.particles, loose.masses, material(), { tier }));
+  part(loose.particles, loose.masses, { tier: Math.max(...plan.galaxies.map((galaxy) => tierOf(galaxy.radius))) });
 
-  return fields;
+  return parts;
 }
 
 // The structure in one cell of the endless universe (see cosmos.js), with the gas cloud beside it if it has one
@@ -62,7 +71,7 @@ export function buildCellParts(cell) {
   return parts;
 }
 
-// Every array in the parts of a cell, so they can be handed between threads rather than copied.
+// Every array in the parts of a cell or the opening, so they can be handed between threads rather than copied.
 export function buffersOf(parts) {
   return parts.flatMap(({ particles, masses, grid }) => [
     ...Object.values(particles).map((array) => array.buffer),
@@ -72,14 +81,14 @@ export function buffersOf(parts) {
   ]);
 }
 
-// Fields from a cell's parts (see buildCellParts), each with a material from `material()`.
+// Fields from a cell's or the opening's parts (see buildCellParts), each with a material from `material()`.
 export function fieldsOf(parts, material) {
   return parts.map(({ particles, masses, grid, ...place }) => createField(particles, masses, material(), place, grid));
 }
 
 // A field is one Points object whose particles can be captured: a galaxy, a nebula or the loose stars between.
 // `tier` is how big it is, for fading it out once you've outgrown it.
-function createField(particles, masses, material, { x = 0, z = 0, spinRate = 0, tier = 0 } = {}, grid = null) {
+function createField(particles, masses, material, { x = 0, z = 0, spinRate = 0, tier = 0 }, grid) {
   const { positions, colors, scales, phases } = particles;
   const count = masses.length;
 
@@ -112,7 +121,7 @@ function createField(particles, masses, material, { x = 0, z = 0, spinRate = 0, 
     angle: 0,
     tier,
     fade: 1,
-    grid: grid ?? buildGrid(positions, count),
+    grid,
     dirtyMin: Infinity,
     dirtyMax: -1,
   };
