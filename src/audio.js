@@ -52,23 +52,25 @@ const UNLOCK_EVENTS = ['pointerdown', 'pointerup', 'touchend', 'keydown'];
 const midi = (note) => 440 * 2 ** ((note - 69) / 12);
 
 // Everything you hear, synthesised with the Web Audio API: there are no sound files. Browsers only allow sound
-// after a click, tap or key press, so nothing is built until the first one. `camera` pans distant sounds.
-// It adds its switches and the feeding sounds to `settings` (the menu); M toggles the master mute too (game.js
-// handles the key).
+// after a click, tap or key press. The slow part of building it is done while the page is idle after loading, so
+// the first one doesn't stall the game. `camera` pans distant sounds. It adds its switches and the feeding sounds
+// to `settings` (the menu); M toggles the master mute too (game.js handles the key).
 export function createAudio({ camera, settings }) {
   const off = Object.fromEntries(SWITCHES.map(({ key, storage }) => [key, readFlag(storage)]));
   let feed = readChoice(FEED_STORAGE, FEEDS.map(([key]) => key), AUDIO.feeding);
   const menu = buildMenu();
 
-  let ctx = null;
+  let ctx = null; // the context, once everything is built
+  let parts = null; // the slow parts of building it, made ahead (see prepare())
+  let unlocked = false; // whether a click, tap or key press has started the context
   let muted = off.sound;
-  let master, horizon, musicBus, ambience, effects, reverb, chimeSend, pink, brown;
+  let master, horizon, musicBus, ambience, effects, reverb, chimeSend, feedSend, pink, brown;
   let wind, rumble, tension, vortex;
-  let feeds = null; // the feeding sounds, by key, once built
+  let feedSound = null; // the chosen feeding sound, once built: { key, out, sources, follow }
   // Rendering needs no click, so it starts now and is usually done before the first one.
   const score = typeof OfflineAudioContext === 'undefined' ? null : renderMusic();
   let music = null; // the looping source, once the score has rendered
-  const shots = new Set(); // outputs of sound effects that may still be ringing
+  const shots = new Set(); // sound effects that may still be ringing: { out, panner, send, until }
   let starCredit = 0; // stars absorbed since the last chime
   let chimeWait = 0;
   let gulpWait = 0;
@@ -81,9 +83,28 @@ export function createAudio({ camera, settings }) {
   const running = () => ctx !== null && ctx.state === 'running' && !muted;
   const glide = (param, value, time = 0.15) => param.setTargetAtTime(value, ctx.currentTime, time);
 
+  // The slow part of building it all: the context, the noise and the reverb, about half a second on a mid-range
+  // phone. It's done ahead, while the page is idle after loading (see below), so the first click, tap or key press
+  // only has to wire up the nodes and start them. The context starts suspended and waits for that, even where the
+  // browser would let it play now. No sources start before it, since Chrome warns about each one that does.
+  function prepare() {
+    if (parts || ctx || typeof AudioContext === 'undefined') return;
+    // On a phone, a bigger buffer: a little more delay, but the sound doesn't break up while the game is busy.
+    const context = new AudioContext({ latencyHint: window.matchMedia?.('(pointer: coarse)').matches ? 'playback' : 'interactive' });
+    context.suspend();
+    parts = {
+      context,
+      pink: noiseBuffer(context, 8, 'pink', 2),
+      brown: noiseBuffer(context, 6, 'brown', 1),
+      reverb: new ConvolverNode(context, { buffer: impulse(context, 4, Math.random) }),
+    };
+  }
+
   function start() {
-    if (typeof AudioContext === 'undefined') return;
-    ctx = new AudioContext();
+    prepare();
+    if (!parts) return; // no Web Audio
+    ({ context: ctx, pink, brown, reverb } = parts);
+    parts = null;
     const context = ctx;
 
     // master ──► highpass ──► limiter ──► speakers. Music and ambience pass through the horizon filter first,
@@ -104,13 +125,9 @@ export function createAudio({ camera, settings }) {
     ambience.connect(horizon);
     effects = new GainNode(ctx, { gain: off.effects ? 0 : AUDIO.effects });
     effects.connect(master);
-    reverb = new ConvolverNode(ctx, { buffer: impulse(ctx, 4, Math.random) });
     reverb.connect(effects);
     chimeSend = new GainNode(ctx, { gain: 0.4 });
     chimeSend.connect(reverb);
-
-    pink = noiseBuffer(ctx, 8, 'pink', 2);
-    brown = noiseBuffer(ctx, 6, 'brown', 1);
 
     // Wind: the hiss of drifting through space, brighter and louder the faster you go.
     wind = { filter: new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 350, Q: 0.9 }), gain: new GainNode(ctx, { gain: 0 }) };
@@ -139,13 +156,16 @@ export function createAudio({ camera, settings }) {
     vortex = { filter: new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 600, Q: 5 }), gain: new GainNode(ctx, { gain: 0 }) };
     loopNoise(pink).connect(vortex.filter).connect(vortex.gain).connect(effects);
     wobble(0.7, 250, vortex.filter.frequency);
-    feeds = buildFeeds();
+    feedSend = new GainNode(ctx, { gain: 0.3 });
+    feedSend.connect(reverb);
+    useFeed();
 
-    score?.then((buffer) => {
+    score?.then(({ buffer, level }) => {
       if (ctx !== context) return; // disposed while it rendered
-      music = new AudioBufferSourceNode(ctx, { buffer, loop: true });
+      // The buffer runs on past the loop (see renderMusic), so it loops at LOOP rather than at its end.
+      music = new AudioBufferSourceNode(ctx, { buffer, loop: true, loopEnd: LOOP });
       const fade = new GainNode(ctx, { gain: 0 });
-      fade.gain.setTargetAtTime(1, ctx.currentTime, 1.5);
+      fade.gain.setTargetAtTime(level, ctx.currentTime, 1.5);
       music.connect(fade).connect(musicBus);
       music.start();
     });
@@ -166,88 +186,107 @@ export function createAudio({ camera, settings }) {
     return lfo;
   }
 
-  // The sounds in FEEDS, all running and all silent but the chosen one. Each has an output gain and
-  // `follow(feeding)`, which sets it from your feeding rate (0–1) at 20 Hz. Gulps are events, fired by update().
-  function buildFeeds() {
-    const send = new GainNode(ctx, { gain: 0.3 });
-    send.connect(reverb);
-    const output = () => {
-      const out = new GainNode(ctx, { gain: 0 });
-      out.connect(effects);
-      out.connect(send);
-      return out;
-    };
-
+  // How to make each of FEEDS, playing into `out`. Each passes the sources it starts to `keep`, so they can be
+  // stopped, and returns `follow(feeding)`, which sets it from your feeding rate (0–1) at 20 Hz. Gulps are
+  // events instead, fired by update().
+  const FEED_SOUNDS = {
     // Crackle: sparse, bright clicks, the original.
-    const crackle = { out: output() };
-    loopNoise(grainBuffer(ctx, 4, 1, 90, [0.0003, 0.0023]))
-      .connect(new BiquadFilterNode(ctx, { type: 'highpass', frequency: 1800 }))
-      .connect(crackle.out);
-    crackle.follow = (f) => glide(crackle.out.gain, 0.6 * f ** 1.5);
+    crackle(out, keep) {
+      keep(loopNoise(grainBuffer(ctx, 4, 1, 90, [0.0003, 0.0023])))
+        .connect(new BiquadFilterNode(ctx, { type: 'highpass', frequency: 1800 }))
+        .connect(out);
+      return (f) => glide(out.gain, 0.6 * f ** 1.5);
+    },
 
     // Tuned: noise through narrow filters on D minor chord tones, so it rings like breath across a bottle. The
     // upper three join in as you feed harder.
-    const tuned = { out: output(), upper: new GainNode(ctx, { gain: 0 }) };
-    const breath = loopNoise(pink);
-    for (const [note, upper] of [[38, false], [45, false], [50, false], [53, true], [57, true], [62, true]]) {
-      breath.connect(new BiquadFilterNode(ctx, { type: 'bandpass', frequency: midi(note), Q: 12 })).connect(upper ? tuned.upper : tuned.out);
-    }
-    tuned.upper.connect(tuned.out);
-    tuned.follow = (f) => {
-      glide(tuned.out.gain, 2.5 * f, 0.25);
-      glide(tuned.upper.gain, f, 0.25);
-    };
+    tuned(out, keep) {
+      const upper = new GainNode(ctx, { gain: 0 });
+      const breath = keep(loopNoise(pink));
+      for (const [note, high] of [[38, false], [45, false], [50, false], [53, true], [57, true], [62, true]]) {
+        breath.connect(new BiquadFilterNode(ctx, { type: 'bandpass', frequency: midi(note), Q: 12 })).connect(high ? upper : out);
+      }
+      upper.connect(out);
+      return (f) => {
+        glide(out.gain, 2.5 * f, 0.25);
+        glide(upper.gain, f, 0.25);
+      };
+    },
 
     // Drone: a low D–A chord, each note a pair of slowly beating oscillators, opening up as you feed.
-    const drone = { out: output(), filter: new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 150, Q: 0.7 }) };
-    drone.filter.connect(drone.out);
-    for (const [note, type, level] of [[38, 'sine', 1], [45, 'sine', 0.7], [50, 'triangle', 0.5], [57, 'triangle', 0.3]]) {
-      for (const detune of [-5, 5]) {
-        const voice = new OscillatorNode(ctx, { type, frequency: midi(note), detune });
-        voice.connect(new GainNode(ctx, { gain: level / 2 })).connect(drone.filter);
-        voice.start();
+    drone(out, keep) {
+      const filter = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 150, Q: 0.7 });
+      filter.connect(out);
+      for (const [note, type, level] of [[38, 'sine', 1], [45, 'sine', 0.7], [50, 'triangle', 0.5], [57, 'triangle', 0.3]]) {
+        for (const detune of [-5, 5]) {
+          const voice = keep(new OscillatorNode(ctx, { type, frequency: midi(note), detune }));
+          voice.connect(new GainNode(ctx, { gain: level / 2 })).connect(filter);
+          voice.start();
+        }
       }
-    }
-    drone.follow = (f) => {
-      glide(drone.out.gain, 0.12 * f, 0.3);
-      glide(drone.filter.frequency, 150 + 1000 * f, 0.3);
-    };
+      return (f) => {
+        glide(out.gain, 0.12 * f, 0.3);
+        glide(filter.frequency, 150 + 1000 * f, 0.3);
+      };
+    },
 
     // Rain: fewer, longer grains than the crackle, kept low, and pattering faster as you feed.
-    const rain = { out: output(), source: loopNoise(grainBuffer(ctx, 4, 2, 45, [0.004, 0.016])) };
-    rain.source
-      .connect(new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 800 }))
-      .connect(new BiquadFilterNode(ctx, { type: 'highpass', frequency: 250 }))
-      .connect(rain.out);
-    rain.follow = (f) => {
-      glide(rain.out.gain, 3.5 * f);
-      glide(rain.source.playbackRate, 0.7 + 0.6 * f);
-    };
+    rain(out, keep) {
+      const source = keep(loopNoise(grainBuffer(ctx, 4, 2, 45, [0.004, 0.016])));
+      source
+        .connect(new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 800 }))
+        .connect(new BiquadFilterNode(ctx, { type: 'highpass', frequency: 250 }))
+        .connect(out);
+      return (f) => {
+        glide(out.gain, 3.5 * f);
+        glide(source.playbackRate, 0.7 + 0.6 * f);
+      };
+    },
 
     // Whoosh: low noise swept around you, left to right and back, swelling each time it passes in front (a
     // cosine at twice the sweep's rate, so it peaks as the pan crosses the middle).
-    const whoosh = {
-      out: output(),
-      filter: new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 350 }),
-      swell: new GainNode(ctx, { gain: 0.6 }),
-      panner: new StereoPannerNode(ctx),
-    };
-    loopNoise(brown).connect(whoosh.filter).connect(whoosh.swell).connect(whoosh.panner).connect(whoosh.out);
-    whoosh.sweep = wobble(0.5, 0.8, whoosh.panner.pan);
-    whoosh.pass = wobble(1, 0.4, whoosh.swell.gain, new PeriodicWave(ctx, { real: [0, 1], imag: [0, 0] }));
-    whoosh.follow = (f) => {
-      const orbit = 0.4 + 0.8 * f; // turns a second
-      glide(whoosh.out.gain, 1.1 * f);
-      glide(whoosh.filter.frequency, 300 + 500 * f);
-      glide(whoosh.sweep.frequency, orbit, 0.5);
-      glide(whoosh.pass.frequency, 2 * orbit, 0.5);
-    };
+    whoosh(out, keep) {
+      const filter = new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 350 });
+      const swell = new GainNode(ctx, { gain: 0.6 });
+      const panner = new StereoPannerNode(ctx);
+      keep(loopNoise(brown)).connect(filter).connect(swell).connect(panner).connect(out);
+      const around = keep(wobble(0.5, 0.8, panner.pan));
+      const pass = keep(wobble(1, 0.4, swell.gain, new PeriodicWave(ctx, { real: [0, 1], imag: [0, 0] })));
+      return (f) => {
+        const orbit = 0.4 + 0.8 * f; // turns a second
+        glide(out.gain, 1.1 * f);
+        glide(filter.frequency, 300 + 500 * f);
+        glide(around.frequency, orbit, 0.5);
+        glide(pass.frequency, 2 * orbit, 0.5);
+      };
+    },
 
     // Gulps: the sounds come from gulp(); this only opens their output.
-    const gulps = { out: output() };
-    gulps.follow = (f) => glide(gulps.out.gain, f > 0.03 ? 1 : 0, 0.05);
+    gulps(out) {
+      return (f) => glide(out.gain, f > 0.03 ? 1 : 0, 0.05);
+    },
+  };
 
-    return { crackle, tuned, drone, rain, whoosh, gulps };
+  // Builds the chosen feeding sound, if it isn't already playing, and stops the one before it. Only one is
+  // built at a time: keeping all six running, silent but the one you hear, cost the audio thread about a fifth
+  // of its work for nothing.
+  function useFeed() {
+    if (feedSound?.key === feed) return;
+    if (feedSound) {
+      const { out, sources } = feedSound;
+      glide(out.gain, 0, 0.03); // fade out before stopping, so it doesn't click
+      for (const source of sources) source.stop(ctx.currentTime + 0.2);
+      setTimeout(() => out.disconnect(), 300);
+    }
+    const out = new GainNode(ctx, { gain: 0 });
+    out.connect(effects);
+    out.connect(feedSend);
+    const sources = [];
+    const follow = FEED_SOUNDS[feed](out, (source) => {
+      sources.push(source);
+      return source;
+    });
+    feedSound = { key: feed, out, sources, follow };
   }
 
   // One swallow: a low note sliding down into place, with a soft muffled click at the start.
@@ -259,7 +298,7 @@ export function createAudio({ camera, settings }) {
     body.gain.setValueAtTime(0, t);
     body.gain.linearRampToValueAtTime(level, t + 0.015);
     body.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
-    body.connect(feeds.gulps.out);
+    body.connect(feedSound.out);
     for (const [type, gain] of [['sine', 1], ['triangle', 0.3]]) {
       const slide = tone(ctx, type, note * 1.8, t, 0.35);
       sweep(slide.frequency, t, note * 1.8, note, 0.12);
@@ -267,24 +306,30 @@ export function createAudio({ camera, settings }) {
     }
     const click = new GainNode(ctx, { gain: 0 });
     envelope(click.gain, t, [[0, 0], [0.008, 0.4 * level], [0.08, 0]]);
-    noise(brown, t, 0.1).connect(new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 500 })).connect(click).connect(feeds.gulps.out);
+    noise(brown, t, 0.1).connect(new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 500 })).connect(click).connect(feedSound.out);
   }
 
   function unlock() {
     if (muted || document.hidden) return;
     if (!ctx) start();
     if (ctx && ctx.state !== 'running') ctx.resume();
+    unlocked = ctx !== null;
   }
 
-  // No sound while the tab is hidden; the game is paused then anyway.
+  // No sound while the tab is hidden; the game is paused then anyway. A context no click has started yet can't
+  // be resumed, so it waits for one.
   function onVisibility() {
     if (!ctx) return;
     if (document.hidden) ctx.suspend();
-    else if (!muted) ctx.resume();
+    else if (!muted && unlocked) ctx.resume();
   }
 
   for (const type of UNLOCK_EVENTS) window.addEventListener(type, unlock, { capture: true, passive: true });
   document.addEventListener('visibilitychange', onVisibility);
+
+  // Muted, nothing is made until you unmute, so muted audio costs nothing.
+  const ahead = () => !muted && prepare();
+  const preparing = window.requestIdleCallback ? requestIdleCallback(ahead, { timeout: 2000 }) : setTimeout(ahead, 500);
 
   // Its tab in the settings menu: a switch for each of SWITCHES, then the feeding sounds.
   function buildMenu() {
@@ -327,7 +372,9 @@ export function createAudio({ camera, settings }) {
     feed = key;
     writeChoice(FEED_STORAGE, key);
     menu.draw();
-    if (ctx) previewUntil = ctx.currentTime + PREVIEW;
+    if (!ctx) return;
+    useFeed();
+    previewUntil = ctx.currentTime + PREVIEW;
   }
 
   function setMuted(value) {
@@ -342,18 +389,33 @@ export function createAudio({ camera, settings }) {
       if (!ctx) start();
       if (!ctx) return; // no Web Audio
       ctx.resume();
+      unlocked = true;
       glide(master.gain, AUDIO.master, 0.1);
     }
   }
 
-  // The output of one sound effect: panned, partly sent to the reverb. reset() silences any still ringing.
-  function shot(wet, pan = 0, level = 1) {
+  // The output of one sound effect, `length` seconds long: panned, partly sent to the reverb. Once it's over,
+  // prune() takes it out of the mix. reset() silences any still ringing.
+  function shot(length, wet, pan = 0, level = 1) {
     const out = new GainNode(ctx, { gain: level });
     const panner = new StereoPannerNode(ctx, { pan });
+    const send = new GainNode(ctx, { gain: wet });
     out.connect(panner).connect(effects);
-    panner.connect(new GainNode(ctx, { gain: wet })).connect(reverb);
-    shots.add(out);
+    panner.connect(send).connect(reverb);
+    shots.add({ out, panner, send, until: ctx.currentTime + length + 0.1 });
     return out;
+  }
+
+  // Disconnects the sound effects that are over. Even silent, every one left plugged into the mix costs the
+  // audio thread a little on every block, and over a long game they pile up until the sound breaks up.
+  function prune() {
+    for (const shot of shots) {
+      if (shot.until > ctx.currentTime) continue;
+      shot.out.disconnect();
+      shot.panner.disconnect();
+      shot.send.disconnect();
+      shots.delete(shot);
+    }
   }
 
   function noise(buffer, time, duration) {
@@ -410,6 +472,7 @@ export function createAudio({ camera, settings }) {
     // Every frame, with the frame's real delta. `danger` is the HUD's (0 when you're safe), `stars` how many
     // stars you absorbed this frame, and `timeScale` how fast the game runs (below 1 while a hint slows it).
     update(delta, { player, danger, stars, timeScale = 1 }) {
+      if (ctx) prune();
       if (!running()) {
         starCredit = 0;
         return;
@@ -448,10 +511,7 @@ export function createAudio({ camera, settings }) {
       glide(rumble.gain, alive ? 0.15 + 0.08 * weight : 0.1, 0.5);
       glide(vortex.filter.frequency, 500 + 1500 * feeding, 0.3);
       glide(vortex.gain.gain, 0.3 * feeding);
-      for (const [key, layer] of Object.entries(feeds)) {
-        if (key === feed) layer.follow(feeding);
-        else glide(layer.out.gain, 0, 0.1);
-      }
+      feedSound.follow(feeding);
       glide(tension.filter.frequency, 70 + 450 * threat, 0.3);
       glide(tension.rate.frequency, 1.5 + 5 * threat, 0.3);
       glide(tension.gain.gain, 0.45 * threat * threat, 0.3);
@@ -470,7 +530,7 @@ export function createAudio({ camera, settings }) {
     pull(share) {
       if (!running()) return;
       const t = ctx.currentTime;
-      const out = shot(0.4, 0, clamp(Math.sqrt(2 * share), 0.4, 1));
+      const out = shot(0.9, 0.4, 0, clamp(Math.sqrt(2 * share), 0.4, 1));
 
       // A rising rush of air, and a tone sliding up under it.
       const filter = new BiquadFilterNode(ctx, { type: 'bandpass', Q: 2 });
@@ -491,8 +551,8 @@ export function createAudio({ camera, settings }) {
       if (!running()) return;
       const t = ctx.currentTime;
       const size = clamp(Math.sqrt(2 * share), 0.4, 1);
-      boom(shot(0.5, 0, size), t, { from: 120, to: 32, length: 2.2, level: 0.9, grit: 0.7, bright: 2500 });
-      const chord = shot(0.8, 0, size);
+      boom(shot(2.2, 0.5, 0, size), t, { from: 120, to: 32, length: 2.2, level: 0.9, grit: 0.7, bright: 2500 });
+      const chord = shot(4, 0.8, 0, size);
       REWARD.forEach((note, i) => hum(ctx, chord, t + 0.05 + i * 0.08, midi(note), 0.08, 0.4, 3.5));
     },
 
@@ -501,7 +561,7 @@ export function createAudio({ camera, settings }) {
     sideChange(prey) {
       if (!running()) return;
       const t = ctx.currentTime;
-      const out = shot(0.6);
+      const out = shot(1.6, 0.6);
       (prey ? SIDE_UP : SIDE_DOWN).forEach((note, i) => hum(ctx, out, t + i * 0.14, midi(note), 0.1, 0.04, 1.4));
     },
 
@@ -512,7 +572,7 @@ export function createAudio({ camera, settings }) {
       if (music) glide(music.playbackRate, 0.35, 1);
       if (!running()) return;
       const t = ctx.currentTime;
-      const out = shot(0.5);
+      const out = shot(3, 0.5);
 
       // Stretched thin: a falling tone that wavers more and more…
       const whine = new BiquadFilterNode(ctx, { type: 'lowpass', Q: 2 });
@@ -545,7 +605,7 @@ export function createAudio({ camera, settings }) {
       glide(horizon.frequency, 180, 1);
       if (music) glide(music.playbackRate, 0.25, 2);
       if (!running()) return;
-      boom(shot(0.8), ctx.currentTime, { from: 75, to: 22, length: 4, level: 1, grit: 0.8, bright: 900 });
+      boom(shot(4, 0.8), ctx.currentTime, { from: 75, to: 22, length: 4, level: 1, grit: 0.8, bright: 900 });
     },
 
     // Two other black holes merged at `position`: a muffled thud, quieter the further it is from you.
@@ -557,22 +617,27 @@ export function createAudio({ camera, settings }) {
       if (volume < 0.03) return;
       right.setFromMatrixColumn(camera.matrixWorld, 0).setY(0).normalize();
       const pan = distance > 0 ? 0.8 * clamp(offset.dot(right) / distance, -1, 1) : 0;
-      boom(shot(0.7, pan, volume), ctx.currentTime, { from: 90, to: 30, length: 2, level: 0.6, grit: 0.5, bright: 500 });
+      boom(shot(2, 0.7, pan, volume), ctx.currentTime, { from: 90, to: 30, length: 2, level: 0.6, grit: 0.5, bright: 500 });
     },
 
     // Silences anything still ringing and lifts the horizon filter.
     reset() {
       starCredit = 0;
       if (!ctx) return;
-      for (const out of shots) out.gain.setTargetAtTime(0, ctx.currentTime, 0.03);
-      shots.clear();
+      for (const shot of shots) {
+        shot.out.gain.setTargetAtTime(0, ctx.currentTime, 0.03);
+        shot.until = Math.min(shot.until, ctx.currentTime + 0.2); // pruned once it has faded
+      }
       glide(horizon.frequency, OPEN, 0.4);
       if (music) glide(music.playbackRate, 1, 0.6);
     },
 
     dispose() {
+      if (window.cancelIdleCallback) cancelIdleCallback(preparing);
+      else clearTimeout(preparing);
       for (const type of UNLOCK_EVENTS) window.removeEventListener(type, unlock, { capture: true });
       document.removeEventListener('visibilitychange', onVisibility);
+      parts?.context.close();
       ctx?.close();
       ctx = null;
     },
@@ -762,20 +827,20 @@ async function renderMusic() {
     }
   });
 
-  const rendered = await offline.startRendering();
+  // The tail is folded in place, and the buffer is played up to LOOP and no further. It's normalised by the gain
+  // it's played at, { buffer, level }, rather than by rescaling it: going over every sample again, or copying
+  // them into a buffer of their own, would hold up the game for a moment on a phone.
+  const buffer = await offline.startRendering();
   const length = LOOP * MUSIC_RATE;
-  const channels = [0, 1].map((c) => {
-    const data = rendered.getChannelData(c);
-    for (let i = length; i < data.length; i++) data[i - length] += data[i];
-    return data.subarray(0, length);
-  });
-
   let peak = 0;
-  for (const data of channels) for (let i = 0; i < length; i++) peak = Math.max(peak, Math.abs(data[i]));
-  const music = new AudioBuffer({ numberOfChannels: 2, length, sampleRate: MUSIC_RATE });
-  channels.forEach((data, c) => {
-    for (let i = 0; i < length; i++) data[i] *= 0.9 / peak;
-    music.copyToChannel(data, c);
-  });
-  return music;
+  for (let c = 0; c < buffer.numberOfChannels; c++) {
+    const data = buffer.getChannelData(c);
+    for (let i = length; i < data.length; i++) data[i - length] += data[i];
+    for (let i = 0; i < length; i++) {
+      const sample = data[i];
+      if (sample > peak) peak = sample;
+      else if (-sample > peak) peak = -sample;
+    }
+  }
+  return { buffer, level: 0.9 / peak };
 }
