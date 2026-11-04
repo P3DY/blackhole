@@ -1,5 +1,6 @@
 // A smoke test: runs the game headless in Chromium (WebGL in software, so slow but real) at a few scales, steers
-// it with the keyboard for a while, pauses, retries, and fails on any page error or an empty canvas.
+// it with the keyboard for a while, pauses, retries, and fails on any page error or an empty canvas. Then it saves
+// a checkpoint, reloads, and checks the game carries on from exactly what was saved.
 //
 //   npm run smoke              every tier in TIERS, 10 s each
 //   npm run smoke -- 0 12      just these tiers
@@ -107,8 +108,56 @@ try {
     failed ||= errors.length > 0;
     await page.close();
   }
+
+  // A checkpoint survives a reload: save one partway through a run, reload, and compare.
+  {
+    const page = await browser.newPage({ viewport: { width: 960, height: 600 } });
+    const errors = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    page.on('console', (message) => message.type() === 'error' && errors.push(message.text()));
+    const started = () => page.waitForFunction(() => window.blackHole?.renderer.info.render.frame > 10, null, { timeout: 60000 });
+
+    await page.goto(url);
+    await started();
+    if ((await page.evaluate(() => window.blackHole.debug.resumed)) !== null) errors.push('a fresh page carried on from a checkpoint');
+    await page.keyboard.down('KeyW');
+    await page.keyboard.down('Shift');
+    await page.waitForTimeout(3000);
+    await page.keyboard.up('Shift');
+    await page.keyboard.up('KeyW');
+    const saved = await page.evaluate(() => window.blackHole.debug.save());
+    await page.reload();
+    await started();
+    const back = await page.evaluate(() => window.blackHole.debug.resumed);
+    errors.push(...compare(saved, back));
+
+    console.log(`reload: ${errors.length === 0 ? 'ok' : 'FAILED'} (${saved.stats.stars} stars eaten, ${saved.disk[0]} in disks)`);
+    for (const error of errors) console.log(`  ${error}`);
+    failed ||= errors.length > 0;
+    await page.close();
+  }
 } finally {
   await browser.close();
   await server.close();
 }
 process.exit(failed ? 1 : 0);
+
+// What differs between a checkpoint as saved and the game straight after restoring it, both as described by
+// game.js's describe(). A core the streamer hasn't built again (or a new one it has) doesn't count, since which
+// cells are around you depends on more than where you are.
+function compare(saved, back) {
+  if (!back) return ['the reloaded page did not carry on from the checkpoint'];
+  const errors = [];
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  for (const key of ['fields', 'cosmos', 'disk', 'stats', 'visited', 'won']) {
+    if (!same(saved[key], back[key])) errors.push(`${key} differ: saved ${JSON.stringify(saved[key])}, back ${JSON.stringify(back[key])}`.slice(0, 400));
+  }
+  const holes = new Map(saved.holes.map((hole) => [hole[0], hole]));
+  for (const hole of back.holes) {
+    const was = holes.get(hole[0]);
+    if (was ? !same(was, hole) : !hole[0].startsWith('core:')) errors.push(`hole ${hole[0]}: saved ${JSON.stringify(was)}, back ${JSON.stringify(hole)}`);
+    holes.delete(hole[0]);
+  }
+  for (const key of holes.keys()) if (!key.startsWith('core:')) errors.push(`hole ${key} did not come back`);
+  return errors;
+}

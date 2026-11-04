@@ -1,3 +1,4 @@
+import { createPacer } from './pacer.js';
 import { readChoice, readFlag, writeChoice, writeFlag } from './settings.js';
 
 // How sharp the picture is, as [key, label, title, the most screen pixels per CSS pixel]. Fill rate is what limits
@@ -10,9 +11,14 @@ const RESOLUTIONS = [
 ];
 const RESOLUTION_STORAGE = 'black-hole:resolution';
 const BLOOM_STORAGE = 'black-hole:no-bloom';
+const ADAPT_STORAGE = 'black-hole:no-adapt';
+// The pixel ratio never drops below this, however slow it gets.
+const LEAST_RATIO = 0.6;
 
-// The Video tab of the settings menu: the resolution, the bloom, and full screen where the browser allows it.
-// Touch screens start on Balanced, everything else on Sharp.
+// The Video tab of the settings menu: the resolution, whether it adapts to the frame rate, the bloom, and full
+// screen where the browser allows it. Touch screens start on Balanced, everything else on Sharp. While adapting
+// (the default), the resolution chosen is the most it goes up to, and it's scaled down while frames are slow
+// (see pacer.js). Call update() every frame.
 //
 // It sets `renderer`'s pixel ratio itself, and again whenever the screen's density changes (a window moved to
 // another monitor, or the page zoomed). The game picks up a new ratio or size on its next frame. `onBloom(on)`
@@ -21,10 +27,14 @@ export function createGraphics({ renderer, settings, onBloom }) {
   const touch = window.matchMedia?.('(pointer: coarse)').matches ?? false;
   let resolution = readChoice(RESOLUTION_STORAGE, RESOLUTIONS.map(([key]) => key), touch ? 'balanced' : 'sharp');
   let bloom = !readFlag(BLOOM_STORAGE);
+  let adapt = !readFlag(ADAPT_STORAGE);
+  const pacer = createPacer();
+  const seconds = () => performance.now() / 1000;
 
   function apply() {
     const [, , , most] = RESOLUTIONS.find(([key]) => key === resolution);
-    const ratio = Math.min(window.devicePixelRatio || 1, most);
+    const best = Math.min(window.devicePixelRatio || 1, most);
+    const ratio = adapt ? Math.max(Math.min(best, LEAST_RATIO), best * pacer.scale) : best;
     if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
   }
 
@@ -41,12 +51,27 @@ export function createGraphics({ renderer, settings, onBloom }) {
   }
 
   const page = settings.addTab('Video');
-  const choices = settings.addChoices(settings.addGroup(page, 'Resolution'), RESOLUTIONS, (key) => {
+  const resolutionGroup = settings.addGroup(page, 'Resolution');
+  const choices = settings.addChoices(resolutionGroup, RESOLUTIONS, (key) => {
     resolution = key;
     writeChoice(RESOLUTION_STORAGE, key);
+    pacer.reset(seconds());
     apply();
   });
   choices[resolution].checked = true;
+
+  const adaptSwitch = settings.addSwitch(
+    resolutionGroup,
+    'Adapt to frame rate',
+    'Lower the resolution while the game can’t keep up, and raise it again when it can',
+    (checked) => {
+      adapt = checked;
+      writeFlag(ADAPT_STORAGE, !checked);
+      pacer.reset(seconds());
+      apply();
+    },
+  );
+  adaptSwitch.checked = adapt;
 
   const effects = settings.addGroup(page, 'Effects');
   const bloomSwitch = settings.addSwitch(effects, 'Bloom', 'The glow around bright stars and black holes', (checked) => {
@@ -72,6 +97,11 @@ export function createGraphics({ renderer, settings, onBloom }) {
   onBloom(bloom);
 
   return {
+    // Every frame.
+    update() {
+      if (adapt && pacer.sample(seconds()) !== null) apply();
+    },
+
     dispose() {
       density?.removeEventListener('change', onDensity);
       document.removeEventListener('fullscreenchange', onFullscreen);

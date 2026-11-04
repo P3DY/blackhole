@@ -5,7 +5,8 @@ How the code is put together: what runs each frame, how everything is drawn, how
 ## Modules
 
 ```
-main.js ──► game.js ──┬─► config.js        constants (imported by most modules)
+main.js ──► opening.js ──► builder.js   loadOpening: the opening's fields, built in a worker
+        └─► game.js ──┬─► config.js        constants (imported by most modules)
                       ├─► universe.js      planUniverse(random) → the opening, as plain data
                       ├─► cosmos.js ──► names.js   cellAt, cellsNear: the universe past it, as plain data
                       ├─► stream.js ──► builder.js (a worker running cosmos.js and fields.js)   createStreamer
@@ -21,11 +22,12 @@ main.js ──► game.js ──┬─► config.js        constants (imported b
                       ├─► audio.js         createAudio (synthesised music, ambience, effects)
                       ├─► hud.js ──► hud.css
                       ├─► hints.js ──► hints.css   createHints (control lessons, slowed moments)
+                      ├─► save.js          createSaves (the last checkpoint in IndexedDB), fits
                       └─► utils.js         mulberry32, seedOf, createStarfield, disposeObject
 ```
 
-- **`main.js`** is the host. It creates the `WebGLRenderer`, the `PerspectiveCamera` (60° fov, near 0.1 and far 5000 to start, which the game scales as you grow; see [The frame](#the-frame)) and `OrbitControls` with damping. It calls `createGame()` and runs the loop, clamping each frame's delta to 0–0.1 s: a backgrounded tab doesn't jump forward, and the first frame, whose timestamp can come before the start time, doesn't run backward. In development it puts `{ renderer, camera, scene }` on `window.blackHole` for poking at from the console.
-- **`game.js`** holds `createGame({ renderer, camera, controls })`, a closure that owns all game state. It returns `{ scene, update, render, dispose }`. The rival AI, capture, movement and camera code live in it because they share that state.
+- **`main.js`** is the host. It creates the `WebGLRenderer`, the `PerspectiveCamera` (60° fov, near 0.1 and far 5000 to start, which the game scales as you grow; see [The frame](#the-frame)) and `OrbitControls` with damping. It waits for `loadOpening()` (see [Startup](#startup)), calls `createGame()` with the result and runs the loop, clamping each frame's delta to 0–0.1 s: a backgrounded tab doesn't jump forward, and the first frame, whose timestamp can come before the start time, doesn't run backward. In development it puts `{ renderer, camera, scene, debug }` on `window.blackHole` for poking at from the console. `debug` is for the smoke test (see [Checkpoints](#checkpoints)).
+- **`game.js`** holds `createGame({ renderer, camera, controls })`, a closure that owns all game state. It returns `{ scene, update, render, dispose }`, and `debug` in development. The rival AI, capture, movement and camera code live in it because they share that state.
 - Every other module is a factory or a set of pure helpers with no game state of its own. The factories keep only the state of what they make: the disk and jet pools, and the streamer's records of the cells around you (see [The endless universe](#the-endless-universe)).
 
 ## World layout
@@ -44,14 +46,16 @@ Every black hole has a **slot** (see [Hole slots](#hole-slots)), stored on it as
 
 ## Startup
 
-1. `mulberry32(UNIVERSE_SEED)` gives a seeded random stream.
-2. `planUniverse(random)` lays out the opening as plain objects: the main path, side trips, nebulae, start point and rival spawns.
-3. `buildFields(plan, random, fieldMaterial)` builds geometry for every field of the opening **from the same random stream**, each with its own material. It also builds each field's spatial grid once. These fields stay for good.
+`index.html` shows a loading screen (inline styles, so it's there before the script arrives), and `main.js` keeps it until the first frame has been drawn, then fades it out.
+
+1. `loadOpening()` (`opening.js`) asks a worker (`builder.js`, the cells' builder, in a worker of its own) for the opening's fields. There, `buildOpening()` (`fields.js`) takes a seeded stream, `mulberry32(UNIVERSE_SEED)`, plans the opening with `planUniverse(random)` and then builds the particles of every field and its spatial grid with `buildOpeningParts(plan, random)` **from the same stream**, and hands the arrays back. That's about 2 s of work with the CPU throttled 4×, so on the main thread it would freeze the page. Meanwhile `loadOpening()` makes its own copy of the plan, which is quick and the same, since it starts the same stream. If the worker can't start or fails, `buildOpening()` runs on the main thread instead.
+2. `planUniverse()` lays out the opening as plain objects: the main path, side trips, nebulae, start point and rival spawns.
+3. `createGame()` turns the parts into fields with `fieldsOf()`, each with its own material, as it does for cells. These fields stay for good. Without `opening`, it builds them itself with `buildOpening()`.
 4. The player and the opening's cores take the first slots. The disk pool, the jet pool, the streamer (which starts its worker), the post-processing chain, the HUD and the hints are created.
 5. `reset()` puts everything at its starting state. For the opening it rebuilds nothing: it only refills the alive flags, restores the holes and clears the pools. It makes the opening's rivals afresh, clears the streamer, and has it open the cells around you, of which there are none at the start. Retrying from a checkpoint works much the same way (see [Checkpoints](#checkpoints)).
 6. `renderer.compile()` compiles every shader in the scene, hidden objects included, with the composer's buffer bound (the scene is drawn into that, not the screen, and three.js builds different shaders for each). Otherwise the rings' shader would compile the first time a ring shows, just as a black hole comes near, and on a phone that stalls the frame. Black holes added later share it, so nothing compiles during play.
 
-Because steps 2 and 3 share one random stream, any change that consumes a different number of random values in `planUniverse` changes all of the opening's galaxy geometry after it. The cells past the opening don't use that stream: each has streams of its own (see [The endless universe](#the-endless-universe)). Rival timers and jets use `Math.random()`, so runs differ slightly even though the universe is fixed.
+Because the plan and the fields share one random stream, any change that consumes a different number of random values in `planUniverse` changes all of the opening's galaxy geometry after it. `test/opening.test.js` checks that the plan made alone matches the worker's, and that the fields come out the same each time. The cells past the opening don't use that stream: each has streams of its own (see [The endless universe](#the-endless-universe)). Rival timers and jets use `Math.random()`, so runs differ slightly even though the universe is fixed.
 
 ## The endless universe
 
@@ -128,7 +132,7 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 
 ### Accretion disks (`diskVertexShader`)
 
-- Positions are world-space and come from the CPU. `aHole` carries each particle's black hole center and shadow radius, so a single draw call can shade every disk.
+- Positions are world-space and come from the CPU. `aSlot` (the `owners` bytes) says which black hole each particle orbits, and the shader looks up its centre and shadow radius in `uHoles`, a uniform `vec4` for each of the `MAX_HOLES` slots that `disk.update()` fills from `slots` every frame. So a single draw call can shade every disk.
 - **Heat:** the particle's own color shifts through orange and white to blue-white as it nears the shadow.
 - **Beaming:** the side orbiting toward the camera is brighter.
 
@@ -160,7 +164,7 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 ### Disk pool (`disk.js`)
 
 - One pool of `DISK_CAPACITY` (32,768) particles is shared by every black hole. The arrays are stored per attribute, and each particle carries an `owners[i]` slot.
-- Live particles are **kept packed** at the front. Absorbing one swaps the last particle into its slot. Only `[0, count)` is drawn (`setDrawRange`) and uploaded (`addUpdateRange`). Positions and `aHole` are uploaded every frame; colors and scales only when particles have been added, removed or loaded.
+- Live particles are **kept packed** at the front. Absorbing one swaps the last particle into its slot. Only `[0, count)` is drawn (`setDrawRange`) and uploaded (`addUpdateRange`). Only positions are uploaded every frame; colors, scales and slots (`aSlot`) only when particles have been added, removed, loaded or handed to another black hole. The loop uses `Math.sqrt` rather than `Math.hypot` and `**`, which are several times slower in V8.
 - Orbits are applied as an **exact rotation** of `ORBIT_SPEED · (S/r)^1.5 · Δt` plus inflow, so tight orbits don't drift outward the way Euler steps would. A newly captured star keeps the difference between its own velocity and the flow as a drift, which decays at `SETTLE`. That way it eases into orbit instead of snapping.
 - When a hole is swallowed, `transfer(from, to)` reassigns its particles to the eater. When a slot is freed, `release(slot)` drops whatever particles still name it.
 - `load(saved, remap)` puts a checkpoint's particles back, moving each to the slot its black hole has now (`remap`) and dropping those whose black hole is gone.
@@ -196,8 +200,9 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 - **Building cells** takes about 20 ms each (generating the particles and their grid), so the worker does it. The main thread only wraps the arrays it hands back in geometry, two cells a frame at most. Flying through new cells at tier 8 kept frames under 14 ms (p99) on a 144 Hz display. In development the worker loads three.js unbundled, so the first cells take a few seconds to arrive; in a build they arrive within a fraction of a second.
 - **Memory** is about 100 MB of JS heap at tier 15. Saving a checkpoint takes about 6 ms.
 - **Fields are frustum-culled** as whole `Points` objects, so only fields in view cost vertex work, and faded fields are hidden. The four giants past Andromeda are capped at 60,000 stars each (`MAX_GALAXY_STARS` in `universe.js`), and each cell's structure has 24,000. Their stars are drawn bigger to match, so they look about as full without the load.
-- **GPU cost** is dominated by fill rate: additive points, plus bloom and lensing at full resolution. The Video tab (`graphics.js`) sets the pixel ratio: up to 2, 1.5 (the default on touch screens, 44% fewer pixels than 2) or 1, and can turn bloom off. It sets it again when the screen's density changes. There's no MSAA, since everything is drawn into the composer's buffers, which don't use it.
+- **GPU cost** is dominated by fill rate: additive points, plus bloom and lensing at full resolution. The Video tab (`graphics.js`) sets the pixel ratio: up to 2, 1.5 (the default on touch screens, 44% fewer pixels than 2) or 1, and can turn bloom off. It sets it again when the screen's density changes. With **Adapt to frame rate** on (the default), the resolution picked is a ceiling: `pacer.js` averages the real frame time a second at a time, and after two seconds in a row under about 50 fps it scales the pixel ratio down by 0.85 (0.72 as many pixels), to half at most and never below a ratio of 0.6. A step that didn't make frames at least 5% faster (the CPU, not the GPU, was the limit) is undone, and no step down is tried for a minute. After 5 s at about 57 fps or better it steps back up, and if that's too much within 10 s, the wait before the next try doubles, up to 2 minutes. It waits 3 s after starting, and 1 s after each change, before judging. It times frames itself, from one `graphics.update()` (called every frame from `update()`) to the next, since the host clamps its delta at 0.1 s and a game drawing 5 frames a second needs help most; a gap of a second or more (a hidden tab) doesn't count. `fitToRenderer()` picks up the new ratio. The constants are `PACE` in `pacer.js`, and `test/pacer.test.js` covers it. There's no MSAA, since everything is drawn into the composer's buffers, which don't use it.
 - **Audio** runs on its own thread, and on a phone it breaks up as soon as that thread misses a deadline, which a busy frame makes more likely. So only the chosen feeding sound runs, every effect is disconnected once it's over, and phones get a bigger buffer (see [Audio](#audio-audiojs)). The 4 s reverb is now the biggest single node, at about a third of the graph's work. A 3 s one would save about a fifth of the total, at the cost of a shorter tail. A mono reverb (`channelCount: 1`) measured slower in Chrome, not faster.
+- **Loading.** With the CPU throttled 4×, the longest main-thread task while loading went from 1.8–2.4 s to 0.5–0.7 s once the opening was built in the worker. What's left is the script itself, wrapping the arrays in geometry, compiling shaders and the first frame's uploads, behind the loading screen.
 - **Main-thread stalls during play** used to come from one-off work, which now happens before you play. The audio's slow part is built while the page is idle, and the shaders are compiled at load (see [Startup](#startup)). With the CPU throttled 4×, the first key press now takes about 60 ms, down from 0.9 s, and finishing the music's render takes about 60 ms, down from 0.4 s.
 
 ## HUD (`hud.js`)
@@ -305,7 +310,7 @@ Every sound is synthesised with the Web Audio API. There are no audio files, and
     | `gulps` | Soft low notes sliding down into place, 1 to 4 a second as feeding rises |
 
   - Which one plays is the player's choice. The default is `AUDIO.feeding` (`tuned`). The **Feeding** section of the settings menu's Sound tab picks another, which is kept in `localStorage`. Picking one plays it for 2.5 s as if you were feeding hard, so you hear what you chose without flying into stars. Their levels were matched by measurement, allowing for low sounds seeming quieter, so switching doesn't change how loud feeding is.
-- **Events.** `fall()` and `swallow()` in `game.js` call these, and step 9 of the frame calls `sideChange`:
+- **Events.** `fall()` and `swallow()` in `game.js` call these, and step 10 of the frame calls `sideChange`:
 
   | Call | When | Sound |
   |------|------|-------|
@@ -318,7 +323,7 @@ Every sound is synthesised with the Web Audio API. There are no audio files, and
 
   When you fall in, the horizon filter closes and the music's `playbackRate` drops to a quarter, so time seems to stall. `reset()` opens the filter again, restores the rate, and silences any effect that's still ringing.
 
-  Each effect plays through its own output from `shot(length, wet, pan, level)`. `shots` keeps it, so `reset()` can silence it, and `prune()` disconnects it every frame once `length` seconds are up. The reverb's tail carries on, since that lives in the convolver. **Give `shot()` the effect's true length.** Anything left plugged into the graph costs the audio thread a little on every block, even when it's silent, and a node that JavaScript still holds stays plugged in. Effects used to be cleared only on a retry, so over a long game they piled up into the hundreds: 300 of them tripled the audio thread's work, and 1,000 left it barely keeping up even on a fast desktop CPU. On a phone, the sound broke up. Chimes and gulps keep no hold on their nodes, so the browser drops those itself once their sources stop.
+  Each effect plays through its own output from `shot(length, wet, pan, level)`. `shots` keeps it, so `reset()` can silence it, and `prune()` disconnects it every frame once `length` seconds are up. The reverb's tail carries on, since that lives in the convolver. **Give `shot()` the effect's true length.** Anything left plugged into the graph costs the audio thread a little on every block, even when it's silent, and a node that JavaScript still holds stays plugged in. Effects used to be cleared only on a retry, so over a long game they piled up into the hundreds: 300 of them tripled the audio thread's work, and 1,000 left it barely keeping up even on a fast desktop CPU. On a phone, the sound broke up. Chimes and gulps go into `shots` too. Chrome would drop them once nothing holds them and their sources have stopped, but only when it next collects garbage, which this game makes rare. Until then they cost as much as if they were held: rendering 20 s offline with 1,000 finished, unreferenced chimes took 19–23 s without a collection, against 11 s with them disconnected.
 - **Mute.** The settings menu's Sound tab has switches for Sound (the master mute, also **M**), Music and Effects (which covers the ambience too), and below them the Feeding choices (see [Settings](#settings-settingsjs)). Each setting is kept in `localStorage`. The master mute fades out and then suspends the context, so muted audio costs nothing; Music and Effects just zero their bus gains. The context is also suspended while the tab is hidden.
 
 ## Settings (`settings.js`)
@@ -331,16 +336,18 @@ Every sound is synthesised with the Web Audio API. There are no audio files, and
 
 ## Checkpoints
 
-Each core or rival you swallow makes a checkpoint due (`pending` in `game.js`). Step 9 saves it in the first frame where you're alive, nothing heavier is within `CHECKPOINT.safe` (8) of its danger radii (`danger < 1 / safe²`), and no rival is hunting you. So a retry never drops you somewhere you can't get away from. If you're swallowed before it's saved, Retry goes back to the checkpoint before.
+Each core or rival you swallow makes a checkpoint due (`pending` in `game.js`). Step 10 of the frame saves it in the first frame where you're alive, nothing heavier is within `CHECKPOINT.safe` (8) of its danger radii (`danger < 1 / safe²`), and no rival is hunting you. So a retry never drops you somewhere you can't get away from. If you're swallowed before it's saved, Retry goes back to the checkpoint before.
 
-- `saveCheckpoint()` copies everything that changes as you play:
+- `saveCheckpoint()` copies everything that changes as you play (`snapshot()`), names it after what you swallowed, and stores it (see below):
   - each of the opening's fields' alive flags (bit-packed with `pack()` from `stream.js`), remaining count and rotation
   - the streamer's deltas (`streamer.save()`, which first notes the state of every cell still built)
   - each black hole by key, with its slot, kind, name, starting mass, mass, sizes, state, eater (by key), fall progress, feeding, side of you, position, velocity and rival AI (its galaxy by key)
   - the disk pool (`disk.save()`, live particles only)
   - the stats, the places you've been named (`visited`), whether you've won, and the camera's offset and zoom
 
-  The opening's alive flags are most of it, about 77 KB. Only the last checkpoint is kept, in memory, so a reload loses it.
+  The opening's alive flags are most of it, about 77 KB. Only the last checkpoint is kept.
+- **It survives a reload.** `save.js` stores it in IndexedDB (database `black-hole`, store `saves`, key `checkpoint`) as `{ version, seed, checkpoint }`. A checkpoint is plain objects, typed arrays, a `Map` and `Vector3`s, so IndexedDB takes it as it is. The `Vector3`s come back as plain `{ x, y, z }`, which is all `restore()` reads. When the game starts, it loads the stored one, and if `fits()` (the same `SAVE_VERSION` and `UNIVERSE_SEED`, a field for each of the opening's with the right number of bits, and every part there), restores it and says "Carrying on ·" and its name where the checkpoint note goes. One that doesn't fit, or throws while being restored, is deleted (after a throw, the game resets). Nothing's restored if you've swallowed something or started over before the load comes back, nor in development with `?tier=N`. Start over deletes it. Without IndexedDB (some private windows), each call warns and settles, and checkpoints last until a reload as they used to. **Bump `SAVE_VERSION`** when a checkpoint's shape changes.
+- `npm run smoke` checks the round trip: it plays for a moment, saves a checkpoint through `window.blackHole.debug.save()`, reloads, and compares the checkpoint with the game straight after it was restored (`debug.resumed`, before a frame has passed), both summed up by `describe()` in `game.js`. Cores of cells that the streamer did or didn't build again don't count, since which cells are open depends on more than where you are.
 - `restore()` puts the opening's alive flags back and uploads them whole, like `reset()`. The black holes and cells then go back in this order:
   1. `streamer.load()` drops every record (freeing their cores) and takes the saved deltas.
   2. Every rival is removed and the saved ones are made again.

@@ -61,8 +61,7 @@ import {
   ringVertexShader,
   starFragmentShader,
 } from './shaders.js';
-import { planUniverse } from './universe.js';
-import { buildFields } from './fields.js';
+import { buildOpening, fieldsOf } from './fields.js';
 import { bandOf, cellAt } from './cosmos.js';
 import { createStreamer, pack, unpack } from './stream.js';
 import { queryGrid } from './grid.js';
@@ -75,7 +74,8 @@ import { createPointer } from './pointer.js';
 import { createAudio } from './audio.js';
 import { createSettings } from './settings.js';
 import { createGraphics } from './graphics.js';
-import { TAU, createStarfield, disposeObject, mulberry32 } from './utils.js';
+import { createSaves, fits } from './save.js';
+import { TAU, createStarfield, disposeObject } from './utils.js';
 
 const { clamp, damp, smoothstep } = THREE.MathUtils;
 
@@ -84,9 +84,11 @@ const HANDLED_KEYS = new Set(Object.values(KEYS).flat());
 // What the end card says you reached while you're still among the opening's galaxies.
 const OPENING_TITLE = 'Galaxies';
 
-// Builds the whole game into a new scene and takes over the camera and controls it's given.
+// Builds the whole game into a new scene and takes over the camera and controls it's given. `opening` is the
+// opening's { plan, parts } from loadOpening() (opening.js); without it, the opening is built here, which takes
+// a couple of seconds on a phone.
 // Call update() then render() every frame, and dispose() to tear it all down.
-export function createGame({ renderer, camera, controls }) {
+export function createGame({ renderer, camera, controls, opening: prebuilt }) {
   controls.enablePan = false; // the camera stays on the black hole
   controls.minPolarAngle = 0.15; // straight down would leave no "forward" to steer by
   controls.maxPolarAngle = Math.PI * 0.47;
@@ -99,8 +101,8 @@ export function createGame({ renderer, camera, controls }) {
   backdrop.material.depthWrite = false;
   scene.add(backdrop);
 
-  const random = mulberry32(UNIVERSE_SEED);
-  const plan = planUniverse(random);
+  // The opening, as loadOpening() (opening.js) made it off the main thread, or built here if it wasn't given.
+  const { plan, parts: openingParts } = prebuilt ?? buildOpening();
   // The drawing buffer's size in CSS pixels, and its pixel ratio. Both are read from the renderer every frame, so
   // the host can resize it however it likes (see fitToRenderer()).
   const drawSize = renderer.getSize(new THREE.Vector2());
@@ -135,7 +137,7 @@ export function createGame({ renderer, camera, controls }) {
     });
 
   // The opening's fields are here for good. Past it, the streamer adds fields to `fields` and takes them out again.
-  const openingFields = buildFields(plan, random, fieldMaterial);
+  const openingFields = fieldsOf(openingParts, fieldMaterial);
   const fields = [...openingFields];
   for (const field of fields) scene.add(field.points);
 
@@ -384,6 +386,10 @@ export function createGame({ renderer, camera, controls }) {
 
   const hints = createHints({ controls });
 
+  // The last checkpoint is kept across reloads too, and the game picks up from it when it starts.
+  const saves = createSaves();
+  let resumable = true; // whether the one a previous visit left may still be picked up (see `resumed`)
+
   // --- Game state ---------------------------------------------------------------
 
   // Back to the last checkpoint, or the start if there isn't one yet (R, or Retry).
@@ -397,6 +403,8 @@ export function createGame({ renderer, camera, controls }) {
   // Back to the start, forgetting the checkpoint.
   function startOver() {
     checkpoint = null;
+    resumable = false;
+    saves.clear();
     hud.setCheckpoint(null);
     reset();
   }
@@ -465,8 +473,9 @@ export function createGame({ renderer, camera, controls }) {
 
   // For development: `?tier=N` in the address starts you weighing what tier N expects, just inside one of ring N's
   // cells (see cosmos.js), so the universe far from the start can be tried out. Returns that cell, or null.
+  const askedTier = () => Number(new URLSearchParams(window.location.search).get('tier'));
   function startAtTier() {
-    const tier = Number(new URLSearchParams(window.location.search).get('tier'));
+    const tier = askedTier();
     if (!(tier > 0)) return null;
     const mass = TIER_GROWTH ** (3 * tier);
     Object.assign(player, { mass, shadow: shadowOf(mass), size: shadowOf(mass) });
@@ -480,15 +489,11 @@ export function createGame({ renderer, camera, controls }) {
   // What a hole's checkpoint keeps besides where it is and where it's heading. Its eater is kept by key.
   const SAVED = ['mass', 'shadow', 'size', 'state', 'fallFrom', 'feedRate', 'appetite', 'edible', 'cuedAt'];
 
-  // Saves everything that changes as you play: which stars are left (the opening's flag by flag, the cells' as the
-  // streamer's deltas, both one bit a star), every black hole, the disks and the stats. Holds on to the camera's
-  // angle and zoom too. Only the last one is kept.
-  function saveCheckpoint(victim) {
-    pending = null;
-    checkpoint = {
-      name: victim.name,
-      article: victim.article,
-      kind: victim.kind,
+  // Everything that changes as you play: which stars are left (the opening's flag by flag, the cells' as the
+  // streamer's deltas, both one bit a star), every black hole, the disks and the stats, and the camera's angle and
+  // zoom. Made of plain objects, typed arrays, a Map and Vector3s, so it can be stored as it is (see save.js).
+  function snapshot() {
+    return {
       fields: openingFields.map(({ alive, remaining, angle }) => ({ eaten: pack(alive), remaining, angle })),
       cosmos: streamer.save(),
       holes: holes.map((hole) => ({
@@ -510,7 +515,16 @@ export function createGame({ renderer, camera, controls }) {
       view: new THREE.Vector3().subVectors(camera.position, controls.target),
       cameraScale,
     };
+  }
+
+  // Saves a checkpoint named after `victim`, what you just swallowed, and stores it for the next visit too. Only the
+  // last one is kept. Resolves once it's stored (or couldn't be).
+  function saveCheckpoint(victim) {
+    pending = null;
+    resumable = false;
+    checkpoint = { name: victim.name, article: victim.article, kind: victim.kind, ...snapshot() };
     hud.noteCheckpoint(checkpoint);
+    return saves.store(checkpoint, UNIVERSE_SEED);
   }
 
   // Everything as it was at `saved`, a checkpoint.
@@ -979,6 +993,51 @@ export function createGame({ renderer, camera, controls }) {
 
   reset();
 
+  // Carries on from the checkpoint a previous visit left, once it's loaded, unless you've already swallowed
+  // something or started over since this one began (or, in development, asked for a tier). One that doesn't fit this version of
+  // the game is thrown away. Resolves once that's settled, with whether it was restored.
+  let disposed = false;
+  const resumed = (import.meta.env.DEV && askedTier() > 0 ? Promise.resolve(null) : saves.load()).then((saved) => {
+    if (!saved || disposed || !resumable || pending) return false;
+    if (!fits(saved, { seed: UNIVERSE_SEED, counts: openingFields.map((field) => field.count) })) {
+      saves.clear();
+      return false;
+    }
+    try {
+      restore(saved.checkpoint);
+    } catch (error) {
+      console.warn("The saved checkpoint couldn't be restored, so it's been thrown away.", error);
+      saves.clear();
+      reset();
+      return false;
+    }
+    checkpoint = saved.checkpoint;
+    hud.noteCheckpoint(checkpoint, 'Carrying on');
+    return true;
+  });
+
+  // For the smoke test, in development: save a checkpoint now, and compare what a reload brings back. `describe()`
+  // sums a checkpoint up in JSON, and `resumed` resolves with that of the game straight after it picked up the
+  // last visit's checkpoint (before a frame has passed), or null if it didn't.
+  const debug = import.meta.env.DEV && {
+    save: () => saveCheckpoint({ name: 'a test', article: false, kind: 'core' }).then(() => describe(checkpoint)),
+    resumed: resumed.then((done) => (done ? describe(snapshot()) : null)),
+  };
+  function describe({ fields, cosmos, holes, disk, stats, visited, won }) {
+    const sum = (bytes) => bytes.reduce((total, byte, i) => (total + byte * (i + 1)) % 1000003, 0);
+    return {
+      fields: fields.map(({ eaten, remaining }) => [remaining, sum(eaten)]),
+      cosmos: [...cosmos].map(([key, delta]) => [key, delta.fields.map((field) => field?.remaining ?? null), delta.core, delta.rival]).sort(),
+      holes: holes
+        .map((hole) => [hole.key, hole.state, +hole.mass.toPrecision(9), +hole.position.x.toPrecision(9), +hole.position.z.toPrecision(9)])
+        .sort(),
+      disk: [disk.count, sum(new Uint8Array(disk.positions.buffer, disk.positions.byteOffset, disk.positions.byteLength))],
+      stats,
+      visited: [...visited].sort(),
+      won,
+    };
+  }
+
   // Every shader is compiled now, while the game loads. Otherwise the rings' would wait until the first one shows,
   // and on a phone compiling it stalls that frame, just as a black hole comes near. compile() includes hidden
   // objects. It's done with the composer's buffer bound, since the scene is drawn into that rather than the
@@ -991,6 +1050,7 @@ export function createGame({ renderer, camera, controls }) {
 
   return {
     scene,
+    debug,
 
     update(elapsed, realDelta) {
       fitToRenderer();
@@ -1175,6 +1235,7 @@ export function createGame({ renderer, camera, controls }) {
       if (player.state !== 'alive') danger = 0;
       hud.update({ camera, player, holes, danger });
       timeScale = hints.update(frameDelta, { camera, player, holes, touch: pointer.mode });
+      graphics.update();
       audio.update(realDelta, { player, danger, stars: absorbed.count[player.index], timeScale: stopped ? 0 : timeScale });
     },
 
@@ -1183,6 +1244,7 @@ export function createGame({ renderer, camera, controls }) {
     },
 
     dispose() {
+      disposed = true;
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);

@@ -64,13 +64,13 @@ export function createAudio({ camera, settings }) {
   let parts = null; // the slow parts of building it, made ahead (see prepare())
   let unlocked = false; // whether a click, tap or key press has started the context
   let muted = off.sound;
-  let master, horizon, musicBus, ambience, effects, reverb, chimeSend, feedSend, pink, brown;
+  let master, horizon, musicBus, ambience, effects, reverb, feedSend, pink, brown;
   let wind, rumble, tension, vortex;
   let feedSound = null; // the chosen feeding sound, once built: { key, out, sources, follow }
   // Rendering needs no click, so it starts now and is usually done before the first one.
   const score = typeof OfflineAudioContext === 'undefined' ? null : renderMusic();
   let music = null; // the looping source, once the score has rendered
-  const shots = new Set(); // sound effects that may still be ringing: { out, panner, send, until }
+  const shots = new Set(); // sound effects that may still be ringing: { nodes, until }, nodes to disconnect after
   let starCredit = 0; // stars absorbed since the last chime
   let chimeWait = 0;
   let gulpWait = 0;
@@ -126,8 +126,6 @@ export function createAudio({ camera, settings }) {
     effects = new GainNode(ctx, { gain: off.effects ? 0 : AUDIO.effects });
     effects.connect(master);
     reverb.connect(effects);
-    chimeSend = new GainNode(ctx, { gain: 0.4 });
-    chimeSend.connect(reverb);
 
     // Wind: the hiss of drifting through space, brighter and louder the faster you go.
     wind = { filter: new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 350, Q: 0.9 }), gain: new GainNode(ctx, { gain: 0 }) };
@@ -307,6 +305,7 @@ export function createAudio({ camera, settings }) {
     const click = new GainNode(ctx, { gain: 0 });
     envelope(click.gain, t, [[0, 0], [0.008, 0.4 * level], [0.08, 0]]);
     noise(brown, t, 0.1).connect(new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 500 })).connect(click).connect(feedSound.out);
+    shots.add({ nodes: [body, click], until: t + 0.45 });
   }
 
   function unlock() {
@@ -402,18 +401,17 @@ export function createAudio({ camera, settings }) {
     const send = new GainNode(ctx, { gain: wet });
     out.connect(panner).connect(effects);
     panner.connect(send).connect(reverb);
-    shots.add({ out, panner, send, until: ctx.currentTime + length + 0.1 });
+    shots.add({ nodes: [out, panner, send], until: ctx.currentTime + length + 0.1 });
     return out;
   }
 
   // Disconnects the sound effects that are over. Even silent, every one left plugged into the mix costs the
-  // audio thread a little on every block, and over a long game they pile up until the sound breaks up.
+  // audio thread a little on every block (Chrome doesn't drop them itself), and over a long game they pile up
+  // until the sound breaks up. Every effect goes through shot(), or adds itself to `shots` (gulp()).
   function prune() {
     for (const shot of shots) {
       if (shot.until > ctx.currentTime) continue;
-      shot.out.disconnect();
-      shot.panner.disconnect();
-      shot.send.disconnect();
+      for (const node of shot.nodes) node.disconnect();
       shots.delete(shot);
     }
   }
@@ -450,9 +448,7 @@ export function createAudio({ camera, settings }) {
 
   // A star crossing your shadow: a short low hum from the pentatonic scale, louder when many land at once.
   function chime(count) {
-    const out = new StereoPannerNode(ctx, { pan: Math.random() * 1.2 - 0.6 });
-    out.connect(effects);
-    out.connect(chimeSend);
+    const out = shot(1.1, 0.4, Math.random() * 1.2 - 0.6);
     const note = PENTATONIC[Math.floor(Math.random() * PENTATONIC.length)];
     const level = 0.06 + 0.1 * Math.min(1, Math.log2(1 + count) / 6);
     hum(ctx, out, ctx.currentTime, midi(note), level, 0.08, 1.1);
@@ -625,7 +621,7 @@ export function createAudio({ camera, settings }) {
       starCredit = 0;
       if (!ctx) return;
       for (const shot of shots) {
-        shot.out.gain.setTargetAtTime(0, ctx.currentTime, 0.03);
+        shot.nodes[0].gain.setTargetAtTime(0, ctx.currentTime, 0.03); // each one's output, a gain
         shot.until = Math.min(shot.until, ctx.currentTime + 0.2); // pruned once it has faded
       }
       glide(horizon.frequency, OPEN, 0.4);
