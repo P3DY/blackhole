@@ -1,12 +1,17 @@
 import * as THREE from 'three';
 import { BOOST, LESSONS, REACH, RINGS, SLOW_MOTION, THRUST } from './config.js';
 import { dangerRadius, planarDistance } from './holes.js';
+import { readChoice, readFlag, reducedMotion, writeChoice, writeFlag } from './settings.js';
 import './hints.css';
 
 const { clamp, smoothstep } = THREE.MathUtils;
 
 // The control lessons, in the order they're taught.
 const ORDER = ['drift', 'boost', 'look'];
+
+// Progress is remembered across reloads, as checkpoints are: how many lessons are done, and each moment seen.
+const LESSON_STORAGE = 'black-hole:lessons';
+const momentStorage = (kind) => `black-hole:seen-${kind}`;
 
 // What time slows down for, the first time each happens: nearing a black hole heavier than you, or a lighter one.
 const MOMENTS = {
@@ -69,7 +74,7 @@ const LESSON_HTML = {
 
 // Teaches the game as you play, with no intro. Each control is a looping gesture that fades in and out until
 // you've used it, and the first time you near a heavier or a lighter black hole, time all but stops while a
-// label explains it. It keeps its own DOM and progress, which survives a restart (but not a reload).
+// label explains it. It keeps its own DOM and progress, which survives a restart and a reload (in localStorage).
 //
 // update() returns the time scale for the next frame, and `focus` names the black hole being explained, so
 // the game can light it up.
@@ -96,12 +101,13 @@ export function createHints({ controls }) {
   // How much of each control you've used, whether or not its lesson has come up yet.
   const used = { drift: 0, boost: 0, look: 0 };
   const lessons = ORDER.map((key) => ({ key, element: root.querySelector(`[data-lesson="${key}"]`) }));
-  let current = 0; // the lesson being taught: the ones before it are done
+  // The lesson being taught: the ones before it are done.
+  let current = Number(readChoice(LESSON_STORAGE, ORDER.map((_, i) => String(i)).concat(String(ORDER.length)), '0'));
   let waited = 0; // seconds since the one before it was done
   let azimuth = null; // the camera's angles last frame, to measure how far you've turned it
   let polar = 0;
 
-  const seen = new Set(); // the moments already explained
+  const seen = new Set(Object.keys(MOMENTS).filter((kind) => readFlag(momentStorage(kind)))); // the moments already explained
   let moment = null; // { kind, hole, age } while time is slowed
   const focus = { kind: '', hole: null, radius: 0, glow: 0 };
   let clock = 0;
@@ -139,6 +145,7 @@ export function createHints({ controls }) {
         element.classList.replace('active', 'done');
       }
       current++;
+      writeChoice(LESSON_STORAGE, String(current));
       waited = 0;
       return;
     }
@@ -170,6 +177,7 @@ export function createHints({ controls }) {
       } else if (distance > REACH * player.size * SLOW_MOTION.lighter || !onScreen(hole.position, camera)) continue;
 
       seen.add(kind);
+      writeFlag(momentStorage(kind), true);
       moment = { kind, hole, age: 0 };
       const [title, line] = MOMENTS[kind];
       callout.querySelector('b').textContent = title;
@@ -228,7 +236,7 @@ export function createHints({ controls }) {
     focus.kind = kind;
     focus.hole = hole;
     focus.radius = kind === 'heavier' ? dangerRadius(hole, player) : RINGS.prey * hole.size;
-    focus.glow = depth * (0.75 + 0.25 * Math.sin(clock * 6));
+    focus.glow = depth * (reducedMotion() ? 0.9 : 0.75 + 0.25 * Math.sin(clock * 6)); // steady, if asked for less motion
 
     camera.getWorldDirection(forward).setY(0).normalize();
     pin(callout, hole.position, focus.radius, 1, camera);

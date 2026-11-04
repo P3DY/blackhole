@@ -219,7 +219,7 @@ RenderPass ──► lens ShaderPass ──► UnrealBloomPass ──► OutputP
 
 ## Hints (`hints.js`)
 
-The game starts with no introduction. `createHints({ controls })` teaches it as you play, keeping its own DOM and progress the same way the HUD does. Progress survives a retry or a restart but not a reload.
+The game starts with no introduction. `createHints({ controls })` teaches it as you play, keeping its own DOM and progress the same way the HUD does. Progress survives a retry, a restart and a reload: how many lessons are done (`black-hole:lessons` in localStorage) and each moment seen (`black-hole:seen-heavier`, `black-hole:seen-lighter`). Start over keeps it too. Clearing the site's data teaches the game again.
 
 - **Control lessons.** Drift, then boost, then look around, each a gesture that loops on a 4.4 s period: fade in, play, fade out, pause. Each comes `LESSONS.wait` seconds after the one before it is done, and shows until you've done enough of it (`LESSONS` in `config.js`). Use counts from the start whether or not its lesson is showing, so a lesson you've already done is skipped.
   - Drift counts seconds at full thrust (`|thrust| / (THRUST · S · boost)`), boost counts seconds of `player.boosting`, and look counts the radians the camera turns, read from `controls.getAzimuthalAngle()` and `getPolarAngle()`. Only you turn the camera: the game's follow moves it but keeps its angles.
@@ -232,6 +232,7 @@ The game starts with no introduction. `createHints({ controls })` teaches it as 
     | tilt | A phone outline tips away, then to the right, with a marble rolling the way you'd go | One fingertip held down, glowing |
   - The gestures are pure CSS animations sharing one period, so they stay in step and cost nothing per frame. When a lesson is done while showing, it flares and fades from wherever its pulse was (`--from`). Its class is dropped on `animationend`, which stops the gestures looping unseen.
   - Lessons hide while a moment is playing or you're not alive.
+  - With `prefers-reduced-motion: reduce`, a lesson shows its glyphs still instead of pulsing and looping its gesture, and fades without a flare when done.
 - **Slowed moments.** The first time you near a black hole heavier than you, and the first time you near a lighter one, time slows to `SLOW_MOTION.scale` (4%) while a label explains it:
 
   | Moment | Starts when | Label | In the world |
@@ -241,7 +242,8 @@ The game starts with no introduction. `createHints({ controls })` teaches it as 
 
   - The time scale eases down over `ease` (0.3 s of real time), holds for `hold` (3.5 s), then recovers over `recover` (0.8 s). It's interpolated as `scale^depth` (depth 0 to 1), so the change feels even. You can still steer and orbit the camera meanwhile; steering just acts in slow motion.
   - "On screen" means the hole's centre is inside 90% of the view, so on a narrow screen a hole at the edge waits until you turn toward it.
-  - The label is pinned each frame (by `transform`) to the top of the ring on screen, and clamped to the viewport. The "your reach" tag sits under your reach ring. Letterbox bars slide in while time is slowed.
+  - The label is pinned each frame (by `transform`) to the top of the ring on screen, and clamped to the viewport. The "your reach" tag sits under your reach ring. Letterbox bars slide in while time is slowed (they fade in instead with reduced motion).
+  - With reduced motion (`reducedMotion()` in `settings.js`), the ring it lights glows steadily instead of pulsing. Time still slows, so you have time to read the label.
   - A moment ends early if you stop being alive or restart. If the black hole it's about is swallowed, it skips to the recovery.
   - The audio follows the time scale: while you're alive, the music's `playbackRate` drags toward half speed and the horizon filter closes toward 900 Hz. Once you're falling in, `fall()` and `swallowed()` take over both, as before.
 

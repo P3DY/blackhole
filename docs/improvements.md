@@ -10,16 +10,12 @@ None known.
 
 ## Gameplay and UX
 
-- **Lessons start again on a reload, though the run doesn't.** Since checkpoints survive a reload, a returning player carries on mid-run but is taught steering and boosting again, slowed moments and all. `hints.js` keeps its progress (`current`, and which slowed moments have been shown) only in memory. Remembering it with the `readChoice` / `writeChoice` helpers in `settings.js` would fix it; Start over should keep it, as it does now.
 - **What you did since the last checkpoint is lost on a reload.** Only checkpoints are stored, and one is saved only after you swallow a core or a rival. Saving one on `pagehide` (when it would be safe, by the same rule as step 10 of the frame in `docs/architecture.md`) would keep more of a run, but a write that late isn't guaranteed to finish, so it's a bonus rather than a promise.
-- **No reduced-motion mode.** Only the loading screen honours `prefers-reduced-motion`. The hints' looping gestures (`hints.css`), the rings' flares on a change of side and the slowed moments could calm down or stop for those who ask.
 
 ## Performance
 
 ### Phones
 
-- **Graphics.** The Video tab now caps the pixel ratio (1.5 by default on touch screens) and can turn bloom off. If the game still stutters on a phone, the next step is to scale the resolution with the frame time. `fitToRenderer()` in `game.js` already follows any change to the renderer's pixel ratio, so it would only need something to watch the frame time and call `renderer.setPixelRatio()`, with some hysteresis.
-- **Loading.** Building the opening's 618,183 stars runs on the main thread: a task of about 2 s with the CPU throttled 4× (`spiralParticles`, `looseStars`, `buildGrid`), then about 0.5 s for the first frame's uploads. The page shows nothing meanwhile. It could move to a worker the way the cells past the opening did (`buildCellParts()` / `fieldsOf()`). Mind the seeded stream: `planUniverse()` and `buildFields()` share one `mulberry32(UNIVERSE_SEED)`, so the worker would have to run both, in the same order.
 - **`update()` on a slow CPU.** With the CPU throttled 4×, `update()` took 4–6.5 ms at the median but 12–17 ms at the 95th percentile and 18–31 ms at the 99th, a frame's whole budget at 60 Hz. The software renderer was competing for the same cores, so these are pessimistic. Profiling on a real phone (Chrome remote debugging) would show whether it matters. `disk.update()` and the capture queries are where to look.
 
 ### CPU and memory
@@ -41,6 +37,8 @@ None known.
 
 Since the review:
 
+- **Lessons are remembered across reloads**, like checkpoints: which lessons are done and which slowed moments you've seen, in localStorage.
+- **A reduced-motion mode** follows `prefers-reduced-motion`: the lessons' gestures stand still, slowed moments light their ring without pulsing, and rings that change sides brighten without swelling.
 - **A faster `update()`.** The disk's shader looks each particle's black hole up in a uniform array by slot (`uHoles`, `aSlot`), so only positions are uploaded each frame, and its loop uses `Math.sqrt` instead of `Math.hypot` and `**`. `queryGrid()` no longer makes arrays as it walks. With the CPU throttled 4× at tier 8, `disk.update()` went from 0.9 / 4.9 / 8.0 ms (median / p95 / p99) to 0.4 / 2.5 / 4.8 ms, and the whole of `update()` from 14.4 / 19.9 ms to 9.5 / 13.2 ms at the 95th / 99th percentile.
 - **Chimes and gulps are disconnected once they end**, like the other effects. Chrome drops unreferenced nodes only when it collects garbage, and until then they kept costing the audio thread.
 - **The resolution adapts to the frame rate** (`pacer.js`, on by default in the Video tab): it drops a step at a time while the game runs under about 50 fps, keeps a step only if it helped, and climbs back when there's room. Its thresholds haven't been tried on a real phone yet.

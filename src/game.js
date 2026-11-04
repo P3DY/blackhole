@@ -72,7 +72,7 @@ import { createHud } from './hud.js';
 import { createHints } from './hints.js';
 import { createPointer } from './pointer.js';
 import { createAudio } from './audio.js';
-import { createSettings } from './settings.js';
+import { createSettings, reducedMotion } from './settings.js';
 import { createGraphics } from './graphics.js';
 import { createSaves, fits } from './save.js';
 import { TAU, createStarfield, disposeObject } from './utils.js';
@@ -1133,6 +1133,7 @@ export function createGame({ renderer, camera, controls, opening: prebuilt }) {
       let danger = 0;
       let sideChange = null; // whether the black hole that just changed sides is now prey, if one did
       const hint = hints.focus;
+      const calm = reducedMotion(); // a flare only brightens the ring, without swelling it
       const playing = player.state === 'alive';
       const reach = REACH * player.size;
       for (const hole of holes) {
@@ -1166,7 +1167,7 @@ export function createGame({ renderer, camera, controls, opening: prebuilt }) {
         ring.visible = alive && playing && opacity > 0;
         if (!ring.visible) continue;
         ring.position.copy(hole.position);
-        ring.scale.setScalar(Math.max(radius, leastRingRadius(hole.position)) * (1 + 0.25 * hole.flash));
+        ring.scale.setScalar(Math.max(radius, leastRingRadius(hole.position)) * (1 + (calm ? 0 : 0.25) * hole.flash));
         const { uniforms } = ring.material;
         uniforms.uColor.value.copy(edible ? PREY_COLOR : DANGER_COLOR);
         uniforms.uOpacity.value = opacity;
