@@ -96,7 +96,7 @@ export function createAudio({ camera, settings }) {
       context,
       pink: noiseBuffer(context, 8, 'pink', 2),
       brown: noiseBuffer(context, 6, 'brown', 1),
-      reverb: new ConvolverNode(context, { buffer: impulse(context, 4, Math.random) }),
+      reverb: new ConvolverNode(context, { buffer: impulse(context, 3, Math.random) }),
     };
   }
 
