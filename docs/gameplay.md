@@ -59,7 +59,7 @@ Every black hole shows which side of you it's on, in the world rather than the H
 
 A red ring is at its brightest from 3 of its radii in, and fades to a floor (`RINGS.floor`, 0.3) by 12. Prey rings stay at that floor. Both fade out between 16 and 32 of your reach radii from you (`RINGS.range`), and arrows at the screen edge take over for black holes off screen. However far you zoom out, a ring is drawn at least 12 px in radius (`RINGS.minPixels`) and 1.5 px thick (`RINGS.width`). The screen edges glow red as you get close to something heavier.
 
-**Changing sides.** You lose mass all the time and gain it in bursts, and so do rivals, so the balance can tip either way. When a black hole within ring range changes sides, its ring flares and swells for 1.2 s (`SIDE_CHANGE.flash`), its tint crossfades, and two hummed notes play: up a fourth when it becomes prey, down a tritone when it becomes a threat. The same black hole stays quiet for 4 s of game time after that (`SIDE_CHANGE.cooldown`), so two holes trading places at a near tie don't keep chiming.
+**Changing sides.** You lose mass all the time and gain it in bursts, and so do rivals, so the balance can tip either way. When a black hole within ring range changes sides, its ring flares and swells (only flares, with reduced motion) for 1.2 s (`SIDE_CHANGE.flash`), its tint crossfades, and two hummed notes play: up a fourth when it becomes prey, down a tritone when it becomes a threat. The same black hole stays quiet for 4 s of game time after that (`SIDE_CHANGE.cooldown`), so two holes trading places at a near tie don't keep chiming.
 
 The first time you near a heavier black hole, time slows almost to a stop while its ring pulses and a label explains it. The first time you near a lighter one, the same happens with its blue ring and a ring showing your reach (see [Hints](#hints)).
 
@@ -171,7 +171,8 @@ There's no introduction: the game starts straight away and teaches itself as you
 
 - **Controls** are shown one at a time as looping gestures that fade in and out until you've done them: drift (the mouse, W A S D, or the touch mode's gesture), then boost (Shift, the right mouse button, or the touch mode's boost), then look around (left-drag, or two fingers). On a touch screen the drift and boost gestures follow the touch mode picked in the settings. Each waits 1.5 s after the last one is done. Anything you've already done counts, so you only see what you haven't found yet.
 - **Weight** is explained the first time it matters. Nearing a black hole that outweighs you, or one you outweigh, slows time to 4% for about 4.5 s while a label over it says what it means: don't cross a heavier one's red ring, and bring a lighter one inside your reach to swallow it.
-- What you've learned stays learned when you retry or start over. A reload starts over.
+- What you've learned stays learned when you retry, start over or reload.
+- If your system asks for reduced motion, the gestures are shown still, the ring a slowed moment explains glows steadily instead of pulsing, and a ring that changes sides brightens without swelling.
 
 The thresholds are in `LESSONS` and `SLOW_MOTION` (see [tuning.md](tuning.md#hints)).
 

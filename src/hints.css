@@ -813,3 +813,48 @@
 .bh-letterbox.on::after {
   transform: scaleY(1);
 }
+
+/* --- Less motion, when asked for ----------------------------------------------------- */
+
+/* A lesson shows its keys or glyphs still, without the looping gestures, and fades when done without a flare.
+   The letterbox fades in rather than sliding, and labels already only fade. */
+@media (prefers-reduced-motion: reduce) {
+  .bh-lesson.active {
+    animation: none;
+    opacity: 0.9;
+  }
+
+  .bh-lesson.done {
+    animation: bh-fade 0.6s ease-out forwards;
+  }
+
+  .bh-lesson:is(.active, .done) * {
+    animation: none !important;
+  }
+
+  /* With no gesture to draw them, the ghost cursor's trail and the fingertips' fade-ins would hide them. */
+  .bh-trail {
+    clip-path: none;
+  }
+
+  .bh-letterbox::before,
+  .bh-letterbox::after {
+    transform: none;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+  }
+
+  .bh-letterbox.on::before,
+  .bh-letterbox.on::after {
+    opacity: 1;
+  }
+}
+
+@keyframes bh-fade {
+  from {
+    opacity: var(--from, 0.9);
+  }
+  to {
+    opacity: 0;
+  }
+}
