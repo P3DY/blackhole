@@ -71,6 +71,8 @@ export function createAudio({ camera, settings }) {
   const score = typeof OfflineAudioContext === 'undefined' ? null : renderMusic();
   let music = null; // the looping source, once the score has rendered
   const shots = new Set(); // sound effects that may still be ringing: { nodes, until }, nodes to disconnect after
+  const samples = new Map(); // every sound effect, rendered ahead (see EFFECTS), by name
+  const targets = new WeakMap(); // the value each AudioParam is gliding toward (see glide())
   let starCredit = 0; // stars absorbed since the last chime
   let chimeWait = 0;
   let gulpWait = 0;
@@ -81,7 +83,14 @@ export function createAudio({ camera, settings }) {
   const right = new THREE.Vector3();
 
   const running = () => ctx !== null && ctx.state === 'running' && !muted;
-  const glide = (param, value, time = 0.15) => param.setTargetAtTime(value, ctx.currentTime, time);
+  // Glides `param` toward `value`. The layers are set 20 times a second, mostly to what they already are, and
+  // every automation event is handed to the audio thread, so a glide toward the same value is skipped.
+  const glide = (param, value, time = 0.15) => {
+    const last = targets.get(param);
+    if (last !== undefined && Math.abs(value - last) <= 1e-4 * Math.abs(last) + 1e-6) return;
+    targets.set(param, value);
+    param.setTargetAtTime(value, ctx.currentTime, time);
+  };
 
   // The slow part of building it all: the context, the noise and the reverb, about half a second on a mid-range
   // phone. It's done ahead, while the page is idle after loading (see below), so the first click, tap or key press
@@ -89,8 +98,10 @@ export function createAudio({ camera, settings }) {
   // browser would let it play now. No sources start before it, since Chrome warns about each one that does.
   function prepare() {
     if (parts || ctx || typeof AudioContext === 'undefined') return;
-    // On a phone, a bigger buffer: a little more delay, but the sound doesn't break up while the game is busy.
-    const context = new AudioContext({ latencyHint: window.matchMedia?.('(pointer: coarse)').matches ? 'playback' : 'interactive' });
+    // A bigger buffer than the smallest the device can do: the sound arrives a little later, but the audio thread
+    // can ride out a busy frame instead of breaking up. Phones get the biggest.
+    const coarse = window.matchMedia?.('(pointer: coarse)').matches;
+    const context = new AudioContext({ latencyHint: coarse ? 'playback' : 'balanced' });
     context.suspend();
     parts = {
       context,
@@ -98,6 +109,7 @@ export function createAudio({ camera, settings }) {
       brown: noiseBuffer(context, 6, 'brown', 1),
       reverb: new ConvolverNode(context, { buffer: impulse(context, 3, Math.random) }),
     };
+    renderEffects(context.sampleRate, parts, samples);
   }
 
   function start() {
@@ -287,25 +299,15 @@ export function createAudio({ camera, settings }) {
     feedSound = { key: feed, out, sources, follow };
   }
 
-  // One swallow: a low note sliding down into place, with a soft muffled click at the start.
+  // One swallow (see EFFECTS), into the feeding sound's output so it follows it.
   function gulp(f) {
-    const t = ctx.currentTime;
-    const note = midi([45, 50, 53][Math.floor(Math.random() * 3)]); // A2, D3, F3
-    const level = 0.25 * (0.4 + 0.6 * f);
-    const body = new GainNode(ctx, { gain: 0 });
-    body.gain.setValueAtTime(0, t);
-    body.gain.linearRampToValueAtTime(level, t + 0.015);
-    body.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
-    body.connect(feedSound.out);
-    for (const [type, gain] of [['sine', 1], ['triangle', 0.3]]) {
-      const slide = tone(ctx, type, note * 1.8, t, 0.35);
-      sweep(slide.frequency, t, note * 1.8, note, 0.12);
-      slide.connect(new GainNode(ctx, { gain })).connect(body);
-    }
-    const click = new GainNode(ctx, { gain: 0 });
-    envelope(click.gain, t, [[0, 0], [0.008, 0.4 * level], [0.08, 0]]);
-    noise(brown, t, 0.1).connect(new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 500 })).connect(click).connect(feedSound.out);
-    shots.add({ nodes: [body, click], until: t + 0.45 });
+    const buffer = samples.get(`gulp${Math.floor(Math.random() * GULPS.length)}`);
+    if (!buffer) return;
+    const level = new GainNode(ctx, { gain: 0.25 * (0.4 + 0.6 * f) });
+    const source = new AudioBufferSourceNode(ctx, { buffer });
+    source.connect(level).connect(feedSound.out);
+    source.start();
+    shots.add({ nodes: [level, source], until: ctx.currentTime + buffer.duration + 0.1 });
   }
 
   function unlock() {
@@ -393,16 +395,20 @@ export function createAudio({ camera, settings }) {
     }
   }
 
-  // The output of one sound effect, `length` seconds long: panned, partly sent to the reverb. Once it's over,
-  // prune() takes it out of the mix. reset() silences any still ringing.
-  function shot(length, wet, pan = 0, level = 1) {
+  // Plays one sound effect from `samples`: panned, partly sent to the reverb. Once it's over, prune() takes it out
+  // of the mix. reset() silences any still ringing. Until the effects have rendered (a moment after loading),
+  // there's nothing to play.
+  function shot(name, wet, pan = 0, level = 1) {
+    const buffer = samples.get(name);
+    if (!buffer) return;
     const out = new GainNode(ctx, { gain: level });
     const panner = new StereoPannerNode(ctx, { pan });
     const send = new GainNode(ctx, { gain: wet });
-    out.connect(panner).connect(effects);
+    const source = new AudioBufferSourceNode(ctx, { buffer });
+    source.connect(out).connect(panner).connect(effects);
     panner.connect(send).connect(reverb);
-    shots.add({ nodes: [out, panner, send], until: ctx.currentTime + length + 0.1 });
-    return out;
+    source.start();
+    shots.add({ nodes: [out, panner, send, source], until: ctx.currentTime + buffer.duration + 0.1 });
   }
 
   // Disconnects the sound effects that are over. Even silent, every one left plugged into the mix costs the
@@ -416,42 +422,10 @@ export function createAudio({ camera, settings }) {
     }
   }
 
-  function noise(buffer, time, duration) {
-    const source = new AudioBufferSourceNode(ctx, { buffer, loop: true });
-    source.start(time, Math.random() * buffer.duration);
-    source.stop(time + duration);
-    return source;
-  }
-
-  // A deep thud: a sine dropping in pitch (with an octave above it, for small speakers) over a burst of
-  // darkening noise.
-  function boom(out, time, { from, to, length, level, grit, bright }) {
-    const body = new GainNode(ctx, { gain: 0 });
-    body.gain.setValueAtTime(0, time);
-    body.gain.linearRampToValueAtTime(level, time + 0.008);
-    body.gain.exponentialRampToValueAtTime(0.0001, time + length);
-    body.connect(out);
-    for (const [type, octave, gain] of [['sine', 1, 1], ['triangle', 2, 0.3]]) {
-      const drop = tone(ctx, type, from * octave, time, length);
-      sweep(drop.frequency, time, from * octave, to * octave, length * 0.4);
-      drop.connect(new GainNode(ctx, { gain })).connect(body);
-    }
-
-    const filter = new BiquadFilterNode(ctx, { type: 'lowpass', Q: 0.5 });
-    sweep(filter.frequency, time, bright, 60, length * 0.8);
-    const hiss = new GainNode(ctx, { gain: 0 });
-    hiss.gain.setValueAtTime(0, time);
-    hiss.gain.linearRampToValueAtTime(grit, time + 0.01);
-    hiss.gain.exponentialRampToValueAtTime(0.0001, time + length);
-    noise(brown, time, length).connect(filter).connect(hiss).connect(out);
-  }
-
-  // A star crossing your shadow: a short low hum from the pentatonic scale, louder when many land at once.
+  // A star crossing your shadow, louder when many land at once.
   function chime(count) {
-    const out = shot(1.1, 0.4, Math.random() * 1.2 - 0.6);
-    const note = PENTATONIC[Math.floor(Math.random() * PENTATONIC.length)];
     const level = 0.06 + 0.1 * Math.min(1, Math.log2(1 + count) / 6);
-    hum(ctx, out, ctx.currentTime, midi(note), level, 0.08, 1.1);
+    shot(`chime${Math.floor(Math.random() * PENTATONIC.length)}`, 0.4, Math.random() * 1.2 - 0.6, level);
   }
 
   return {
@@ -524,41 +498,21 @@ export function createAudio({ camera, settings }) {
 
     // A black hole starts falling into you. `share` is its mass as a share of yours.
     pull(share) {
-      if (!running()) return;
-      const t = ctx.currentTime;
-      const out = shot(0.9, 0.4, 0, clamp(Math.sqrt(2 * share), 0.4, 1));
-
-      // A rising rush of air, and a tone sliding up under it.
-      const filter = new BiquadFilterNode(ctx, { type: 'bandpass', Q: 2 });
-      sweep(filter.frequency, t, 180, 2600, 0.8);
-      const rush = new GainNode(ctx, { gain: 0 });
-      envelope(rush.gain, t, [[0, 0], [0.6, 0.5], [0.85, 0]]);
-      noise(pink, t, 0.9).connect(filter).connect(rush).connect(out);
-
-      const rise = tone(ctx, 'sine', 90, t, 0.9);
-      sweep(rise.frequency, t, 90, 360, 0.8);
-      const level = new GainNode(ctx, { gain: 0 });
-      envelope(level.gain, t, [[0, 0], [0.6, 0.15], [0.85, 0]]);
-      rise.connect(level).connect(out);
+      if (running()) shot('pull', 0.4, 0, clamp(Math.sqrt(2 * share), 0.4, 1));
     },
 
     // You swallowed a black hole. `share` is its mass as a share of yours, after the meal.
     devour(share) {
       if (!running()) return;
-      const t = ctx.currentTime;
       const size = clamp(Math.sqrt(2 * share), 0.4, 1);
-      boom(shot(2.2, 0.5, 0, size), t, { from: 120, to: 32, length: 2.2, level: 0.9, grit: 0.7, bright: 2500 });
-      const chord = shot(4, 0.8, 0, size);
-      REWARD.forEach((note, i) => hum(ctx, chord, t + 0.05 + i * 0.08, midi(note), 0.08, 0.4, 3.5));
+      shot('devour', 0.5, 0, size);
+      shot('reward', 0.8, 0, size);
     },
 
     // A black hole near you changed sides: two hummed notes, up a fourth if you now outweigh it, or down a
     // tritone if it now outweighs you.
     sideChange(prey) {
-      if (!running()) return;
-      const t = ctx.currentTime;
-      const out = shot(1.6, 0.6);
-      (prey ? SIDE_UP : SIDE_DOWN).forEach((note, i) => hum(ctx, out, t + i * 0.14, midi(note), 0.1, 0.04, 1.4));
+      if (running()) shot(prey ? 'sideUp' : 'sideDown', 0.6);
     },
 
     // You crossed a shadow, or something heavier caught you. Time slows and the universe goes dark.
@@ -566,33 +520,7 @@ export function createAudio({ camera, settings }) {
       if (!ctx) return;
       glide(horizon.frequency, 300, 0.6);
       if (music) glide(music.playbackRate, 0.35, 1);
-      if (!running()) return;
-      const t = ctx.currentTime;
-      const out = shot(3, 0.5);
-
-      // Stretched thin: a falling tone that wavers more and more…
-      const whine = new BiquadFilterNode(ctx, { type: 'lowpass', Q: 2 });
-      sweep(whine.frequency, t, 2400, 160, 2.6);
-      const level = new GainNode(ctx, { gain: 0 });
-      envelope(level.gain, t, [[0, 0], [0.3, 0.2], [1.8, 0.2], [2.8, 0]]);
-      whine.connect(level).connect(out);
-      const vibrato = new GainNode(ctx, { gain: 0 });
-      envelope(vibrato.gain, t, [[0, 0], [2.5, 80]]); // cents
-      tone(ctx, 'sine', 7, t, 2.8).connect(vibrato);
-      for (const detune of [-15, 15]) {
-        const saw = tone(ctx, 'sawtooth', 330, t, 2.8);
-        saw.detune.value = detune;
-        sweep(saw.frequency, t, 330, 41, 2.6);
-        vibrato.connect(saw.detune);
-        saw.connect(whine);
-      }
-
-      // …over a roar that builds as you go.
-      const filter = new BiquadFilterNode(ctx, { type: 'lowpass' });
-      sweep(filter.frequency, t, 150, 1200, 2);
-      const roar = new GainNode(ctx, { gain: 0 });
-      envelope(roar.gain, t, [[0, 0], [1.8, 0.6], [3, 0]]);
-      noise(brown, t, 3).connect(filter).connect(roar).connect(out);
+      if (running()) shot('fall', 0.5);
     },
 
     // You're gone. One last thud, and the music sinks to a crawl.
@@ -600,8 +528,7 @@ export function createAudio({ camera, settings }) {
       if (!ctx) return;
       glide(horizon.frequency, 180, 1);
       if (music) glide(music.playbackRate, 0.25, 2);
-      if (!running()) return;
-      boom(shot(4, 0.8), ctx.currentTime, { from: 75, to: 22, length: 4, level: 1, grit: 0.8, bright: 900 });
+      if (running()) shot('swallowed', 0.8);
     },
 
     // Two other black holes merged at `position`: a muffled thud, quieter the further it is from you.
@@ -613,7 +540,7 @@ export function createAudio({ camera, settings }) {
       if (volume < 0.03) return;
       right.setFromMatrixColumn(camera.matrixWorld, 0).setY(0).normalize();
       const pan = distance > 0 ? 0.8 * clamp(offset.dot(right) / distance, -1, 1) : 0;
-      boom(shot(2, 0.7, pan, volume), ctx.currentTime, { from: 90, to: 30, length: 2, level: 0.6, grit: 0.5, bright: 500 });
+      shot('distant', 0.7, pan, volume);
     },
 
     // Silences anything still ringing and lifts the horizon filter.
@@ -640,7 +567,152 @@ export function createAudio({ camera, settings }) {
   };
 }
 
+// --- Sound effects -----------------------------------------------------------------
+//
+// Every sound effect is rendered once, offline, into a mono buffer, and played from it: one source node each,
+// instead of the dozen oscillators, gains and filters it takes to synthesise one. Chimes come several times a
+// second while you feed, and synthesised live they were most of the audio thread's work: rendering 20 s at
+// 8 a second took 5.8 s, against 2.1 s from buffers. On a phone the sound broke up whenever you fed.
+//
+// Each recipe plays into `out` from time 0, using `noises` ({ pink, brown }), and lasts `length` seconds.
+// Its level, pan and reverb are set when it plays (shot() in createAudio()).
+const GULPS = [45, 50, 53]; // A2, D3, F3
+const EFFECTS = {
+  // A star crossing your shadow: a short low hum from the pentatonic scale, one buffer for each note.
+  ...Object.fromEntries(PENTATONIC.map((note, i) => [`chime${i}`, { length: 1.1, play: (c, out) => hum(c, out, 0, midi(note), 1, 0.08, 1.1) }])),
+
+  // One swallow: a low note sliding down into place, with a soft muffled click at the start.
+  ...Object.fromEntries(
+    GULPS.map((note, i) => [
+      `gulp${i}`,
+      {
+        length: 0.36,
+        play(c, out, { brown }) {
+          const body = new GainNode(c, { gain: 0 });
+          body.gain.setValueAtTime(0, 0);
+          body.gain.linearRampToValueAtTime(1, 0.015);
+          body.gain.exponentialRampToValueAtTime(0.0001, 0.35);
+          body.connect(out);
+          const f = midi(note);
+          for (const [type, gain] of [['sine', 1], ['triangle', 0.3]]) {
+            const slide = tone(c, type, f * 1.8, 0, 0.35);
+            sweep(slide.frequency, 0, f * 1.8, f, 0.12);
+            slide.connect(new GainNode(c, { gain })).connect(body);
+          }
+          const click = new GainNode(c, { gain: 0 });
+          envelope(click.gain, 0, [[0, 0], [0.008, 0.4], [0.08, 0]]);
+          noise(c, brown, 0, 0.1).connect(new BiquadFilterNode(c, { type: 'lowpass', frequency: 500 })).connect(click).connect(out);
+        },
+      },
+    ]),
+  ),
+
+  // A black hole starts falling into you: a rising rush of air, and a tone sliding up under it.
+  pull: {
+    length: 0.9,
+    play(c, out, { pink }) {
+      const filter = new BiquadFilterNode(c, { type: 'bandpass', Q: 2 });
+      sweep(filter.frequency, 0, 180, 2600, 0.8);
+      const rush = new GainNode(c, { gain: 0 });
+      envelope(rush.gain, 0, [[0, 0], [0.6, 0.5], [0.85, 0]]);
+      noise(c, pink, 0, 0.9).connect(filter).connect(rush).connect(out);
+
+      const rise = tone(c, 'sine', 90, 0, 0.9);
+      sweep(rise.frequency, 0, 90, 360, 0.8);
+      const level = new GainNode(c, { gain: 0 });
+      envelope(level.gain, 0, [[0, 0], [0.6, 0.15], [0.85, 0]]);
+      rise.connect(level).connect(out);
+    },
+  },
+
+  // You swallowed a black hole: a deep thud, and an open chord hummed upward over it.
+  devour: { length: 2.2, play: (c, out, noises) => boom(c, out, noises, { from: 120, to: 32, length: 2.2, level: 0.9, grit: 0.7, bright: 2500 }) },
+  reward: { length: 4, play: (c, out) => REWARD.forEach((note, i) => hum(c, out, 0.05 + i * 0.08, midi(note), 0.08, 0.4, 3.5)) },
+
+  // A black hole near you changed sides: up a fourth if you now outweigh it, or down a tritone if it now
+  // outweighs you.
+  sideUp: { length: 1.6, play: (c, out) => SIDE_UP.forEach((note, i) => hum(c, out, i * 0.14, midi(note), 0.1, 0.04, 1.4)) },
+  sideDown: { length: 1.6, play: (c, out) => SIDE_DOWN.forEach((note, i) => hum(c, out, i * 0.14, midi(note), 0.1, 0.04, 1.4)) },
+
+  // You crossed a shadow, or something heavier caught you: stretched thin, a falling tone that wavers more and
+  // more, over a roar that builds as you go.
+  fall: {
+    length: 3,
+    play(c, out, { brown }) {
+      const whine = new BiquadFilterNode(c, { type: 'lowpass', Q: 2 });
+      sweep(whine.frequency, 0, 2400, 160, 2.6);
+      const level = new GainNode(c, { gain: 0 });
+      envelope(level.gain, 0, [[0, 0], [0.3, 0.2], [1.8, 0.2], [2.8, 0]]);
+      whine.connect(level).connect(out);
+      const vibrato = new GainNode(c, { gain: 0 });
+      envelope(vibrato.gain, 0, [[0, 0], [2.5, 80]]); // cents
+      tone(c, 'sine', 7, 0, 2.8).connect(vibrato);
+      for (const detune of [-15, 15]) {
+        const saw = tone(c, 'sawtooth', 330, 0, 2.8);
+        saw.detune.value = detune;
+        sweep(saw.frequency, 0, 330, 41, 2.6);
+        vibrato.connect(saw.detune);
+        saw.connect(whine);
+      }
+
+      const filter = new BiquadFilterNode(c, { type: 'lowpass' });
+      sweep(filter.frequency, 0, 150, 1200, 2);
+      const roar = new GainNode(c, { gain: 0 });
+      envelope(roar.gain, 0, [[0, 0], [1.8, 0.6], [3, 0]]);
+      noise(c, brown, 0, 3).connect(filter).connect(roar).connect(out);
+    },
+  },
+
+  // You're gone: one last thud.
+  swallowed: { length: 4, play: (c, out, noises) => boom(c, out, noises, { from: 75, to: 22, length: 4, level: 1, grit: 0.8, bright: 900 }) },
+
+  // Two other black holes merged: a muffled thud.
+  distant: { length: 2, play: (c, out, noises) => boom(c, out, noises, { from: 90, to: 30, length: 2, level: 0.6, grit: 0.5, bright: 500 }) },
+};
+
+// Renders each of EFFECTS into `samples`, one after another, at the live context's `rate` so they play without
+// resampling. It runs on the browser's audio rendering thread, so it doesn't hold up the game.
+async function renderEffects(rate, noises, samples) {
+  if (typeof OfflineAudioContext === 'undefined') return;
+  for (const [name, { length, play }] of Object.entries(EFFECTS)) {
+    const offline = new OfflineAudioContext(1, Math.ceil(length * rate), rate);
+    play(offline, offline.destination, noises);
+    samples.set(name, await offline.startRendering());
+  }
+}
+
+// A deep thud: a sine dropping in pitch (with an octave above it, for small speakers) over a burst of darkening
+// noise.
+function boom(c, out, { brown }, { from, to, length, level, grit, bright }) {
+  const body = new GainNode(c, { gain: 0 });
+  body.gain.setValueAtTime(0, 0);
+  body.gain.linearRampToValueAtTime(level, 0.008);
+  body.gain.exponentialRampToValueAtTime(0.0001, length);
+  body.connect(out);
+  for (const [type, octave, gain] of [['sine', 1, 1], ['triangle', 2, 0.3]]) {
+    const drop = tone(c, type, from * octave, 0, length);
+    sweep(drop.frequency, 0, from * octave, to * octave, length * 0.4);
+    drop.connect(new GainNode(c, { gain })).connect(body);
+  }
+
+  const filter = new BiquadFilterNode(c, { type: 'lowpass', Q: 0.5 });
+  sweep(filter.frequency, 0, bright, 60, length * 0.8);
+  const hiss = new GainNode(c, { gain: 0 });
+  hiss.gain.setValueAtTime(0, 0);
+  hiss.gain.linearRampToValueAtTime(grit, 0.01);
+  hiss.gain.exponentialRampToValueAtTime(0.0001, length);
+  noise(c, brown, 0, length).connect(filter).connect(hiss).connect(out);
+}
+
 // --- Synthesis helpers (for live and offline contexts alike) ------------------------
+
+// A stretch of looping noise from `buffer`, starting somewhere random in it.
+function noise(ctx, buffer, time, duration) {
+  const source = new AudioBufferSourceNode(ctx, { buffer, loop: true });
+  source.start(time, Math.random() * buffer.duration);
+  source.stop(time + duration);
+  return source;
+}
 
 // Linear ramps through [seconds after `time`, value] pairs.
 function envelope(param, time, points) {
