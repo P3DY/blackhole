@@ -201,3 +201,7 @@ export function writeChoice(storage, value) {
     // storage can be unavailable (private browsing, file://); the setting just won't stick
   }
 }
+
+// Whether the player has asked for less motion. Read it when it's needed rather than once, so a change applies at once.
+const calmQuery = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+export const reducedMotion = () => calmQuery?.matches ?? false;
