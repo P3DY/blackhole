@@ -12,6 +12,7 @@ import {
   CAMERA_ELEVATION,
   CAPTURES_PER_FRAME,
   CHECKPOINT,
+  COMPASS,
   CORE_NAMES,
   COSMOS,
   DISK_CAPACITY,
@@ -601,6 +602,8 @@ export function createGame({ renderer, camera, controls, opening: prebuilt }) {
     hud.hideOverlay();
     hints.reset();
     pointer.recentre();
+    compassTarget = null;
+    compassDue = 0;
     timeScale = 1;
     audio.reset();
   }
@@ -845,6 +848,54 @@ export function createGame({ renderer, camera, controls, opening: prebuilt }) {
     for (const galaxy of opening) consider(galaxy);
     for (const galaxy of streamer.records.values()) consider(galaxy);
     return best;
+  }
+
+  // --- Compass ------------------------------------------------------------------
+
+  // The galaxy or structure the compass points you toward, chosen now and then by chooseCompass().
+  let compassTarget = null;
+  let compassDue = 0; // real seconds until it's chosen again
+
+  // How well a galaxy that expects you to arrive weighing `fit` times your mass suits you: 1 when it's your size,
+  // half when it's a tier and a half smaller or bigger.
+  const suitOf = (fit) => 1 / (1 + (Math.log(fit) / Math.log(4)) ** 2);
+
+  // Where you should head to feed, much as pickGalaxy() judges it for a rival, but without the randomness and with
+  // the one already chosen favoured (COMPASS.stick). If you're inside one that would do, it's that one, and the
+  // compass hides. Null if nothing near suits you.
+  function chooseCompass() {
+    const current = compassTarget?.dropped ? null : compassTarget;
+    let best = null;
+    let bestScore = 0;
+    let home = null;
+    let homeScore = 0;
+    const consider = (galaxy) => {
+      const { field } = galaxy;
+      if (!field || field.fade === 0) return;
+      const left = field.remaining / field.count;
+      const fit = arrivalMass(galaxy.radius) / player.mass;
+      if (left < COMPASS.left || fit < COMPASS.fit[0] || fit > COMPASS.fit[1]) return;
+      const distance = planarDistance(galaxy, player.position);
+      const stay = galaxy === current ? COMPASS.stick : 1;
+      const score = ((left * suitOf(fit) * galaxy.radius) / (distance + galaxy.radius)) * stay;
+      if (distance < galaxy.radius && score > homeScore) {
+        homeScore = score;
+        home = galaxy;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = galaxy;
+      }
+    };
+    for (const galaxy of opening) consider(galaxy);
+    for (const galaxy of streamer.records.values()) consider(galaxy);
+    compassTarget = home ?? best;
+  }
+
+  // The compass's target for the HUD, or null while it should hide: you aren't alive, or you're inside it.
+  function compassShown() {
+    if (player.state !== 'alive' || !compassTarget || compassTarget.dropped) return null;
+    return planarDistance(compassTarget, player.position) < compassTarget.radius ? null : compassTarget;
   }
 
   function setMode(rival, mode) {
@@ -1102,7 +1153,14 @@ export function createGame({ renderer, camera, controls, opening: prebuilt }) {
         field.points.material.uniforms.uFade.value = field.fade;
         field.points.visible = field.remaining > 0 && field.fade > 0;
       }
-      if (player.state === 'alive') notePlaces();
+      if (player.state === 'alive') {
+        notePlaces();
+        compassDue -= frameDelta;
+        if (compassDue <= 0 || compassTarget?.dropped) {
+          chooseCompass();
+          compassDue = COMPASS.every;
+        }
+      }
 
       warpers.length = 0;
       for (const hole of roamers) if (hole.state === 'alive' && warpers.length < MAX_WARPS) warpers.push(hole);
@@ -1237,7 +1295,7 @@ export function createGame({ renderer, camera, controls, opening: prebuilt }) {
       writeLenses();
 
       if (player.state !== 'alive') danger = 0;
-      hud.update({ camera, player, holes, danger });
+      hud.update({ camera, player, holes, danger, compass: compassShown() });
       timeScale = hints.update(frameDelta, { camera, player, holes, touch: pointer.mode });
       graphics.update();
       audio.update(realDelta, { player, danger, stars: absorbed.count[player.index], timeScale: stopped ? 0 : timeScale });

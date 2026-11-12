@@ -116,6 +116,17 @@ export const RINGS = {
 // so two holes trading places at a tie don't keep chiming.
 export const SIDE_CHANGE = { flash: 1.2, cooldown: 4 };
 
+// --- Navigation -------------------------------------------------------------------
+//
+// Out in open space, a compass at the screen edge points to the galaxy or structure most worth heading for, chosen
+// every `every` real seconds. It must have `left` of its stars still there (rivals use the same share), and suit
+// your mass: what it expects you to arrive weighing is between `fit[0]` and `fit[1]` times what you weigh, so not
+// long outgrown, nor a tier or two beyond you. Among those, the score favours plenty left, a close fit and a short
+// trip, and the one it already points at scores `stick` times higher, so it doesn't flicker between two. Inside a
+// galaxy it would choose, the compass hides. Distances on it and the edge arrows are in seconds at your unboosted
+// top speed (THRUST / DRAG shadow radii per second), so they read the same at every scale.
+export const COMPASS = { left: 0.25, fit: [0.2, 6], stick: 1.5, every: 0.5 };
+
 // --- Universe ---------------------------------------------------------------------
 
 export const PALETTES = [

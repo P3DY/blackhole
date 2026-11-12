@@ -188,6 +188,101 @@
   --tint: #5ee7ff;
 }
 
+/* The compass toward the next place to feed: a double chevron in the warm white of the place names, so it reads as
+   somewhere to go rather than a black hole. */
+.bh-compass {
+  --tint: #f2dcb8;
+
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: transform;
+}
+
+.bh-compass[hidden] {
+  display: none;
+}
+
+/* Two chevrons, each a square's top and right borders turned to point along the marker. */
+.bh-compass::before,
+.bh-compass::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border: solid var(--tint);
+  border-width: 2px 2px 0 0;
+  filter: drop-shadow(0 0 3px rgba(255, 210, 150, 0.7));
+}
+
+.bh-compass::before {
+  translate: -9px -4px;
+  rotate: 45deg;
+  opacity: 0.45;
+}
+
+.bh-compass::after {
+  translate: -4px -4px;
+  rotate: 45deg;
+  opacity: 0.85;
+}
+
+/* Where the labels beside the compass and the arrows may go: in from the edges, clear of a notch, and below the
+   gear, the place name and the mass readout along the top. */
+.bh-labels {
+  position: absolute;
+  top: calc(72px + env(safe-area-inset-top, 0px));
+  right: calc(24px + env(safe-area-inset-right, 0px));
+  bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+  left: calc(24px + env(safe-area-inset-left, 0px));
+}
+
+/* A name and how far, small and dim, hanging off its point toward the middle of the screen (see placeLabel). */
+.bh-label {
+  position: fixed;
+  top: 0;
+  left: 0;
+  display: flex;
+  gap: 0.5em;
+  max-width: min(46vw, 240px);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.95);
+  opacity: 0.5;
+  will-change: transform;
+}
+
+.bh-label[hidden] {
+  display: none;
+}
+
+.bh-label b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 400;
+}
+
+.bh-label small {
+  flex: none;
+  font-size: inherit;
+  opacity: 0.75;
+}
+
+.bh-label.threat {
+  color: #ffb3a8;
+}
+
+.bh-label.prey {
+  color: #b6efff;
+}
+
+.bh-label.compass {
+  color: #f2dcb8;
+  opacity: 0.7;
+}
+
 /* Above the hints, but only the card takes clicks, so you can still orbit the camera around it. */
 .bh-overlay {
   position: fixed;

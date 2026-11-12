@@ -178,10 +178,11 @@ The thresholds are in `LESSONS` and `SLOW_MOTION` (see [tuning.md](tuning.md#hin
 
 ## HUD
 
-The HUD is deliberately sparse. Apart from the hints, nothing pops up during play. Weight relations show in the world itself: red photon rings and solid red rings mean heavier than you, blue photon rings and dashed blue rings mean prey (see [Who outweighs whom](#who-outweighs-whom-tints-rings-and-the-vignette)).
+The HUD is deliberately sparse. Apart from the hints, nothing pops up during play, and the only words that stay on screen are the few labels on the edge markers. Weight relations show in the world itself: red photon rings and solid red rings mean heavier than you, blue photon rings and dashed blue rings mean prey (see [Who outweighs whom](#who-outweighs-whom-tints-rings-and-the-vignette)).
 
 - **Top right:** your mass and, under it, the feeding meter.
-- **Edge arrows:** for each of the five nearest live black holes that is off screen, an arrow pinned to the screen edge points toward it. Blue means you outweigh it, red means it outweighs you.
+- **Edge arrows:** for each of the five nearest live black holes that is off screen, an arrow pinned to the screen edge points toward it. Blue means you outweigh it, red means it outweighs you. The nearest red one and the nearest blue one carry a small, dim label: the black hole's name and how long it would take to get there at your top speed without boosting ("Sköll 14 s"). Measured in your own speed, the time means the same at every scale.
+- **Compass:** in open space, a warm white double chevron at the screen edge points to the galaxy or structure most worth heading for, labelled with its name and how long until you reach its edge, in the same seconds. It picks somewhere with at least a quarter of its stars left, that suits your mass (not long outgrown, not more than a tier or so beyond you), weighing how much is left, how well it fits and how near it is. It hides while you're inside a galaxy it would pick, while its target is on screen, and once you've been swallowed. Its settings are in `COMPASS` (see [tuning.md](tuning.md#navigation)).
 - **Hints:** control gestures low in the middle of the screen, and labels over a black hole while time is slowed (see [Hints](#hints)).
 - **Checkpoint note:** a line under your mass for a few seconds when a checkpoint is saved.
 - **Place names:** at the top of the screen, the name of a galaxy or structure the first time you're inside it this run, and the name of a new scale ("Galaxy clusters") the first time your mass reaches it.

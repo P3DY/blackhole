@@ -85,6 +85,17 @@ Boosting costs mass, and a smaller you is slower, so the margin shrinks the long
 
 If you raise `RIVAL_PACE.hunt`, `HUNT_TIME`, `HAWKING` or `BOOST_COST`, or lower `HUNT_PREY`, check this inequality or some hunts become unwinnable.
 
+## Navigation
+
+| Constant | Default | Effect |
+|----------|--------:|--------|
+| `COMPASS` | left 0.25 · fit 0.2–6 · stick 1.5 · every 0.5 | The compass points to a galaxy or structure with at least `left` of its stars left, whose arrival mass is between `fit[0]` and `fit[1]` times yours. The one it already points to scores `stick` times higher. It's chosen again every `every` real seconds. |
+
+- **`fit` is in mass, so it spans tiers.** Each tier is `TIER_GROWTH³` ≈ 4.1× heavier, so 0.2–6 reaches about 1.1 tiers below you and 1.3 above. Past the opening that's the ring you're in and one either side: a ring further out (16×) would put you among cores and rivals far heavier than you. Lower `fit[0]` much and the compass sends you back to galaxies whose stars barely feed you.
+- **`left` matches `pickGalaxy()`'s 25%,** so the compass and the rivals agree on what's worth feeding on. Raise it and you're sent on sooner from a galaxy you've half eaten, since being inside one that no longer qualifies shows the compass again.
+- **`stick` is the hysteresis.** At 1 the arrow can swap between two similar targets as you move. Much higher and it keeps pointing to a far one after a better one has come into reach.
+- `every` only sets how quickly a new target is noticed; the marker itself moves every frame.
+
 ## Checkpoints
 
 | Constant | Default | Effect |
