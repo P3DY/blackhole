@@ -1,6 +1,6 @@
 # Improvements
 
-Known bugs and suggested improvements that haven't been made yet, from a review of the code and an investigation into stuttering on mid-range phones. They're roughly in order of priority within each section. Function names are a safer guide than line numbers, which drift.
+Known bugs and suggested improvements that haven't been made yet, from reviews of the code, a short play-through, and an investigation into stuttering on mid-range phones. They're roughly in order of priority within each section. Function names are a safer guide than line numbers, which drift.
 
 When you fix one, take it out of this list, and update the other docs if it changes what they describe.
 
@@ -8,9 +8,39 @@ When you fix one, take it out of this list, and update the other docs if it chan
 
 None known.
 
+## Balance
+
+From playing the opening for a couple of minutes on a desktop, with the mouse.
+
+- **Skipping ahead beats the main path.** A star is worth its galaxy's `STARS_MASS` × arrival mass divided by its star count, whoever eats it, so a Cartwheel star is worth about 17× a Sextans Dwarf star (0.0021 against 0.00012). Cartwheel (tier 2.6) is 22.3 from the start with a radius of 13.6, so its rim is under 5 from the starting galaxy's. Flying in a straight line along that rim for about 50 s took a new player from 1.0 to 5.5, past tier 1's arrival mass, without eating the home galaxy. The risk is small: Cartwheel's core has a danger radius of about 1.5 against a mass-1 player, in a galaxy 13.6 wide, and no rival hunts anything under a quarter of its mass. The same holds at every scale, since the mass a reach sweeps up grows with the galaxy's radius. Pick one:
+  - cap what a star gives as a share of the eater's mass (in `capture()` or where `disk.js` adds it up), so stars from far above your tier are worth no more than ones your size;
+  - make stars from a field more than a tier or so above you too heavy to pull loose, as faded fields already can't be eaten (`captureNearby()`);
+  - keep it as a strategy but make it dangerous: a wider danger radius for cores far heavier than you, or rivals that take small prey when it strays into their galaxy;
+  - or only move Cartwheel away from the start (`SIDE_TRIPS`, which reshuffles the opening), which hides the shortcut without closing it.
+
 ## Gameplay and UX
 
+- **A map.** The compass points at one place to feed, and the edge arrows at the nearest black holes. A zoomed-out map on a key, showing the galaxies and structures around you and which are eaten out, would let you plan further ahead.
+- **The compass can point you up the shortcut.** It suggests galaxies that expect up to 6× your mass (`COMPASS.fit`), which is how far ahead skipping pays (see [Balance](#balance)). Narrow it if the shortcut is closed.
+- **The boost lesson never gives up.** It pulses low in the middle of the screen until you boost, which can be the whole session for someone who doesn't want to burn mass. Retire a control lesson after a few loops unseen (`teach()` in `hints.js`), or the first time you've grown a tier without it.
+- **How much more do you need?** A black hole is red or blue and nothing in between. Near a heavier core, a small label with its mass, or your shortfall ("needs 0.3 million M☉ more"), would tell you whether to keep feeding here or leave. It could share the callout the slowed moments use.
+- **Progress toward the universe.** The mass readout doesn't say how far 10²³ M☉ is. A thin bar on a log scale under the feeding meter (`massTier(mass)` out of 27.8), or the scale's name beside the mass, would.
+- **Volume.** Sound, Music and Effects are switches. Sliders for the three buses (`AUDIO.music`, `ambience`, `effects`) would let you turn the music down without losing it.
+- **Gamepads.** There's no support. A stick maps straight onto `steerStick()` in `pointer.js` (thrust by how far it's pushed), a trigger onto boost, the right stick onto the camera, and Start onto pause.
+- **A camera reset key**, back to the default angle and zoom (`CAMERA_ELEVATION`, `CAMERA_DISTANCE`), for after you've zoomed out to look around.
 - **What you did since the last checkpoint is lost on a reload.** Only checkpoints are stored, and one is saved only after you swallow a core or a rival. Saving one on `pagehide` (when it would be safe, by the same rule as step 10 of the frame in `docs/architecture.md`) would keep more of a run, but a write that late isn't guaranteed to finish, so it's a bonus rather than a promise.
+
+## Ideas for more game
+
+Bigger than the fixes above, and none of them designed yet. Past the opening, tiers 7 to 27.8 change what you see and what it's called, but the loop is the same one twenty times over, so the first of these matters most.
+
+- **A mechanic for each scale**, so each band of `BANDS` plays differently: a cluster's hot gas that feeds you slowly but drags on you; a supercluster's threads as fast lanes, with more thrust along them; voids where Hawking radiation costs more; cores that orbit each other in pairs. Each would live in the cell's plan (`cellAt()` in `cosmos.js`), and anything that changes during play in its delta.
+- **Slingshots.** Gravity is already simulated for every roamer (`move()`). Grazing a heavier hole's red ring without crossing it could give a kick of speed, or pay back some of the boost's cost, so the ring is something to play with as well as avoid.
+- **Rivals with characters.** All of them run the same four modes (`think()`). The seven named ones could each bend it: one that waits in ambush beside a core, one that barely moves but pulls much harder, Sköll and Hati hunting as a pair. Check the hunt inequality in [tuning.md](tuning.md#rivals) for any that changes pace or range.
+- **Feeding streaks.** Holding the feeding meter full for a while could widen your reach or strengthen your jets for as long as it lasts, and jets could push lighter rivals about. `appetite` is already there for every roamer.
+- **Records and goals.** Your best time and peak mass, and the time you reached each scale, kept in localStorage and shown on the end card beside this run's. A few goals to go with them: swallow all seven of the opening's rivals, take Sagittarius A\*, win without boosting.
+- **Seeded runs.** `UNIVERSE_SEED` already shapes everything, and `fits()` already turns away a checkpoint from another seed. A seed in the address, or one for each day, would give a new universe to race through. The opening is built in a worker from the seed, so it would need passing in.
+- **A logbook.** A tab in the settings menu listing what you've swallowed and where you've been (`visited`), with a line about the real object behind each name in `names.js`.
 
 ## Performance
 
@@ -37,6 +67,7 @@ None known.
 
 Since the review:
 
+- **Navigation aids.** A compass at the screen edge points to the galaxy or structure most worth heading for (`chooseCompass()` in `game.js`, tuned by `COMPASS`), and the arrows toward the nearest heavier and the nearest lighter black hole carry its name. Both show how far it is, in seconds at your top speed.
 - **Lessons are remembered across reloads**, like checkpoints: which lessons are done and which slowed moments you've seen, in localStorage.
 - **A reduced-motion mode** follows `prefers-reduced-motion`: the lessons' gestures stand still, slowed moments light their ring without pulsing, and rings that change sides brighten without swelling.
 - **A faster `update()`.** The disk's shader looks each particle's black hole up in a uniform array by slot (`uHoles`, `aSlot`), so only positions are uploaded each frame, and its loop uses `Math.sqrt` instead of `Math.hypot` and `**`. `queryGrid()` no longer makes arrays as it walks. With the CPU throttled 4× at tier 8, `disk.update()` went from 0.9 / 4.9 / 8.0 ms (median / p95 / p99) to 0.4 / 2.5 / 4.8 ms, and the whole of `update()` from 14.4 / 19.9 ms to 9.5 / 13.2 ms at the 95th / 99th percentile.
