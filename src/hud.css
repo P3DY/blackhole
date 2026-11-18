@@ -29,6 +29,26 @@
   opacity: 0.7;
 }
 
+/* On a touch screen, holding a finger on the readout is the look key (see pointer.js). It takes touches only there,
+   so the mouse still steers over it elsewhere, and the hit area reaches a little past the text. */
+@media (pointer: coarse) {
+  .bh-readout {
+    margin: -12px -12px 0 0;
+    padding: 12px 12px 10px 12px;
+    width: 164px;
+    pointer-events: auto;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  .bh-readout .bh-saved {
+    right: 12px;
+    margin-top: -3px; /* where it was without the padding */
+  }
+}
+
 .bh-mass {
   font-size: 13px;
   font-weight: 500;
@@ -199,8 +219,26 @@
   will-change: transform;
 }
 
-.bh-compass[hidden] {
-  display: none;
+/* The compass and the labels ease in and out rather than popping. Hidden, they're still laid out (they're
+   positioned, so that's cheap) but invisible, and the HUD stops moving them. Only opacity changes, so reduced
+   motion keeps the fade, as the hints' labels do. */
+.bh-fade {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.5s ease,
+    visibility 0s linear 0.5s;
+}
+
+.bh-fade.show {
+  visibility: visible;
+  transition:
+    opacity 0.5s ease,
+    visibility 0s;
+}
+
+.bh-compass.show {
+  opacity: 1;
 }
 
 /* Two chevrons, each a square's top and right borders turned to point along the marker. */
@@ -249,12 +287,11 @@
   letter-spacing: 0.03em;
   white-space: nowrap;
   text-shadow: 0 0 6px rgba(0, 0, 0, 0.95);
-  opacity: 0.5;
   will-change: transform;
 }
 
-.bh-label[hidden] {
-  display: none;
+.bh-label.show {
+  opacity: 0.5;
 }
 
 .bh-label b {
@@ -280,6 +317,9 @@
 
 .bh-label.compass {
   color: #f2dcb8;
+}
+
+.bh-label.compass.show {
   opacity: 0.7;
 }
 

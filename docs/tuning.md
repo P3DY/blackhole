@@ -90,11 +90,17 @@ If you raise `RIVAL_PACE.hunt`, `HUNT_TIME`, `HAWKING` or `BOOST_COST`, or lower
 | Constant | Default | Effect |
 |----------|--------:|--------|
 | `COMPASS` | left 0.25 · fit 0.2–6 · stick 1.5 · every 0.5 | The compass points to a galaxy or structure with at least `left` of its stars left, whose arrival mass is between `fit[0]` and `fit[1]` times yours. The one it already points to scores `stick` times higher. It's chosen again every `every` real seconds. |
+| `COMPASS` (showing it) | hungry 0.08 · fed 0.2 · starve 8 | It's chosen all the time, but only shown once your appetite (the feeding meter, 0–1) has stayed under `hungry` for `starve` seconds of game time. Back over `fed`, the count starts again and it fades out. |
+| `LABELS` | press 0.3 · flash 2 | The labels show while the look key is held: Tab, or a touch held on the mass readout for `press` seconds. Each also shows for `flash` real seconds on its own the first time something new comes up on it. |
+| `KEYS.look` | Tab | The look key. |
 
 - **`fit` is in mass, so it spans tiers.** Each tier is `TIER_GROWTH³` ≈ 4.1× heavier, so 0.2–6 reaches about 1.1 tiers below you and 1.3 above. Past the opening that's the ring you're in and one either side: a ring further out (16×) would put you among cores and rivals far heavier than you. Lower `fit[0]` much and the compass sends you back to galaxies whose stars barely feed you.
 - **`left` matches `pickGalaxy()`'s 25%,** so the compass and the rivals agree on what's worth feeding on. Raise it and you're sent on sooner from a galaxy you've half eaten, since being inside one that no longer qualifies shows the compass again.
 - **`stick` is the hysteresis.** At 1 the arrow can swap between two similar targets as you move. Much higher and it keeps pointing to a far one after a better one has come into reach.
 - `every` only sets how quickly a new target is noticed; the marker itself moves every frame.
+- **`hungry` and `fed` are apart on purpose.** Drifting through open space you still catch a stray star now and then, and each one nudges the meter up by a few percent for a moment. With a single threshold those blips would keep restarting the count. Between the two, the count holds where it is. Raise `hungry` past about 0.1 and the compass turns up while you're grazing a galaxy's thin outskirts; lower `fed` towards `hungry` and it flickers.
+- **`starve` is in game time,** so it doesn't run while you're paused or during a slowed moment. At 8 s it's long enough that crossing the gap between two neighbouring galaxies doesn't trigger it, and short enough that you aren't left drifting lost for long.
+- **`LABELS.press`** only needs to be long enough that brushing the readout doesn't flash the labels. Nothing else listens there, so it can be short.
 
 ## Checkpoints
 

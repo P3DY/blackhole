@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DRAG, THRUST } from './config.js';
+import { DRAG, LABELS, THRUST } from './config.js';
 import './hud.css';
 
 const { clamp, smoothstep } = THREE.MathUtils;
@@ -44,8 +44,9 @@ const formatTrip = (seconds) => (seconds < 60 ? `${seconds} s` : `${seconds / 60
 const called = ({ name, article }) => (article ? `the ${name}` : name);
 
 // The DOM layer over the canvas, kept quiet during play: your mass and feeding rate, a danger vignette, arrows
-// at the screen edge toward nearby black holes that are off screen, a compass toward the next place to feed, a brief note when a checkpoint is saved, and
-// the name of where you are when you first get there. Everything else waits for the end-of-game card.
+// at the screen edge toward nearby black holes that are off screen, a compass toward the next place to feed once
+// you're starving, a brief note when a checkpoint is saved, and the name of where you are when you first get there.
+// Names and distances wait for the look key. Everything else waits for the end-of-game card.
 //
 // It also adds the Game tab to `settings` (the menu): retry from the last checkpoint, or start over.
 // `onRetry` and `onStartOver` do those, from the menu or the end card.
@@ -54,7 +55,7 @@ export function createHud({ settings, onRetry, onStartOver }) {
   root.className = 'bh';
   root.innerHTML = `
     <div class="bh-vignette"></div>
-    <div class="bh-markers"><i class="bh-compass" hidden></i></div>
+    <div class="bh-markers"><i class="bh-compass bh-fade"></i></div>
     <div class="bh-labels"></div>
     <div class="bh-place"></div>
     <div class="bh-status" hidden><span></span><small></small><i></i></div>
@@ -137,21 +138,31 @@ export function createHud({ settings, onRetry, onStartOver }) {
     $('.bh-markers').append(element);
     return element;
   });
-  // The compass: a chevron toward where to feed next (chosen in game.js), shown only while that's off screen. It
-  // sits further in than the arrows, since a galaxy's core is at its centre and its arrow would cover the chevron.
+  // The compass: a chevron toward where to feed next (chosen in game.js), shown only while that's off screen, and
+  // only once you're starving or holding the look key. It sits further in than the arrows, since a galaxy's core is
+  // at its centre and its arrow would cover the chevron.
   const compassMarker = $('.bh-compass');
   const COMPASS_MARGIN = 40;
 
+  // The compass and the labels fade in and out (.bh-fade in hud.css) rather than popping, by a class that's only
+  // written when it changes. One fading out stays where it was last placed.
+  const fade = (element, on) => {
+    if (element.classList.contains('show') !== on) element.classList.toggle('show', on);
+  };
+
   // Small dim labels beside the compass, the nearest heavier black hole's arrow and the nearest lighter one's: a
-  // name, and how far in seconds at your top speed. Each keeps what it shows, so it's only written when it changes.
+  // name, and how far in seconds at your top speed. They show while the look key is held, and on their own for
+  // LABELS.flash seconds the first time each thing they name comes up (`met`), so a new rival or a new place to
+  // head for is introduced once and then left to its arrow. Each keeps what it shows, so it's only written when it
+  // changes.
   const labelLayer = $('.bh-labels');
   const makeLabel = (kind) => {
     const element = document.createElement('span');
-    element.className = `bh-label ${kind}`;
-    element.hidden = true;
+    element.className = `bh-label bh-fade ${kind}`;
     element.innerHTML = '<b></b><small></small>';
     labelLayer.append(element);
-    return { element, name: element.firstChild, trip: element.lastChild, of: null, seconds: 0 };
+    const label = { element, name: element.firstChild, trip: element.lastChild, of: null, seconds: 0 };
+    return Object.assign(label, { met: new WeakSet(), introducing: null, until: 0 });
   };
   const labels = { compass: makeLabel('compass'), threat: makeLabel('threat'), prey: makeLabel('prey') };
 
@@ -195,14 +206,15 @@ export function createHud({ settings, onRetry, onStartOver }) {
     }
   }
 
-  // Pins `marker` to the screen edge (`margin` pixels in), pointing toward `position`, or hides it when that's on
-  // screen. Leaves where it went in `edge`, and returns whether it's shown.
-  function placeMarker(marker, position, camera, margin = 18) {
+  // Pins `marker` to the screen edge (`margin` pixels in), pointing toward `position`, unless that's on screen.
+  // Leaves where it went in `edge`, and returns whether it's off screen. An arrow (`hide`) is hidden while its black
+  // hole is on screen; the compass is left where it was, to fade.
+  function placeMarker(marker, position, camera, margin = 18, hide = true) {
     view.copy(position).applyMatrix4(camera.matrixWorldInverse);
     ndc.copy(view).applyMatrix4(camera.projectionMatrix);
-    const hidden = view.z < 0 && Math.abs(ndc.x) < 1 && Math.abs(ndc.y) < 1;
-    if (marker.hidden !== hidden) marker.hidden = hidden;
-    if (hidden) return false;
+    const onScreen = view.z < 0 && Math.abs(ndc.x) < 1 && Math.abs(ndc.y) < 1;
+    if (hide && marker.hidden !== onScreen) marker.hidden = onScreen;
+    if (onScreen) return false;
 
     // Camera-space x/y points the same way on screen, and still makes sense for things behind you.
     const width = window.innerWidth;
@@ -249,11 +261,19 @@ export function createHud({ settings, onRetry, onStartOver }) {
     const ax = (-100 * (x - bounds.left)) / Math.max(bounds.right - bounds.left, 1);
     const ay = (-100 * (y - bounds.top)) / Math.max(bounds.bottom - bounds.top, 1);
     label.element.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(${ax.toFixed(1)}%, ${ay.toFixed(1)}%)`;
-    if (label.element.hidden) label.element.hidden = false;
   }
 
-  function hideLabel(label) {
-    if (!label.element.hidden) label.element.hidden = true;
+  // `label` could name `of` this frame, beside the marker last placed. It does while `look` is held, or for a moment
+  // the first time `of` comes up; otherwise it fades. `now` is in real seconds, the rest as for placeLabel().
+  function offerLabel(label, of, name, distance, player, look, now) {
+    if (!label.met.has(of)) {
+      label.met.add(of);
+      label.introducing = of;
+      label.until = now + LABELS.flash;
+    }
+    const shown = look || (label.introducing === of && now < label.until);
+    if (shown) placeLabel(label, of, name, distance, player);
+    fade(label.element, shown);
   }
 
   function showOverlay(title, body, stats, actions) {
@@ -286,8 +306,13 @@ export function createHud({ settings, onRetry, onStartOver }) {
   ];
 
   const hud = {
-    // `compass` is the galaxy record the compass points to (from game.js), or null while it hides.
-    update({ camera, player, holes, danger, compass }) {
+    // Holding a touch on the mass readout is the look key on touch screens (see pointer.js).
+    lookElement: $('.bh-readout'),
+
+    // `compass` is the galaxy record the compass points to (from game.js), or null while it hides. `starving` is
+    // whether you've gone long enough without feeding for it to show, and `look` whether the look key is held.
+    update({ camera, player, holes, danger, compass, starving, look }) {
+      const now = performance.now() / 1000;
       const text = formatMass(player.mass);
       if (text !== last.mass) mass.textContent = last.mass = text;
       const width = `${(player.appetite * 100).toFixed(1)}%`;
@@ -299,13 +324,12 @@ export function createHud({ settings, onRetry, onStartOver }) {
       // where the stars start.
       placedCount = 0;
       if (compass) spot.set(compass.x, 0, compass.z);
-      if (compass && placeMarker(compassMarker, spot, camera, COMPASS_MARGIN)) {
+      const pointing = (starving || look) && compass !== null && placeMarker(compassMarker, spot, camera, COMPASS_MARGIN, false);
+      fade(compassMarker, pointing);
+      if (pointing) {
         const distance = Math.hypot(compass.x - player.position.x, compass.z - player.position.z) - compass.radius;
-        placeLabel(labels.compass, compass, compass.name, Math.max(0, distance), player);
-      } else {
-        if (!compassMarker.hidden) compassMarker.hidden = true;
-        hideLabel(labels.compass);
-      }
+        offerLabel(labels.compass, compass, compass.name, Math.max(0, distance), player, look, now);
+      } else fade(labels.compass.element, false);
 
       // Edge arrows, with labels on the nearest heavier and the nearest lighter black hole that are off screen.
       if (player.state === 'alive') findNearest(holes, player, markers.length);
@@ -324,10 +348,11 @@ export function createHud({ settings, onRetry, onStartOver }) {
         if (hole.edible ? prey : threat) return;
         if (hole.edible) prey = true;
         else threat = true;
-        placeLabel(hole.edible ? labels.prey : labels.threat, hole, called(hole), Math.sqrt(near.distance), player);
+        const label = hole.edible ? labels.prey : labels.threat;
+        offerLabel(label, hole, called(hole), Math.sqrt(near.distance), player, look, now);
       });
-      if (!threat) hideLabel(labels.threat);
-      if (!prey) hideLabel(labels.prey);
+      if (!threat) fade(labels.threat.element, false);
+      if (!prey) fade(labels.prey.element, false);
     },
 
     // `checkpoint` is the last one saved, if any: { name, kind, stats } (see setCheckpoint).

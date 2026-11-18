@@ -349,10 +349,16 @@ export function createGame({ renderer, camera, controls, opening: prebuilt }) {
   // Seconds R has been held while you're alive, or -1 when it isn't. Retrying mid-game takes a hold (RETRY_HOLD),
   // so a stray press doesn't throw the run away. Once you've been swallowed, a press does it.
   let retryHeld = -1;
+  // Real seconds the look key (Tab, or a touch held on the mass readout) has been held, or 0 while it isn't. For now
+  // it only shows the HUD's labels and the compass; the map planned in docs/improvements.md would take over from a
+  // longer hold.
+  let lookHeld = 0;
 
   function onKeyDown(event) {
     if (!HANDLED_KEYS.has(event.code)) return;
     if (event.code === 'Escape' && settings.isOpen) return; // the menu closes instead
+    // Tab still moves focus around the menu, and the end card's buttons.
+    if (KEYS.look.includes(event.code) && (settings.isOpen || player.state !== 'alive')) return;
     event.preventDefault();
     pressed.add(event.code);
     if (event.repeat) return;
@@ -386,7 +392,7 @@ export function createGame({ renderer, camera, controls, opening: prebuilt }) {
 
   const graphics = createGraphics({ renderer, settings, onBloom: (on) => (bloomPass.enabled = on) });
 
-  const pointer = createPointer({ camera, controls, element: renderer.domElement, settings });
+  const pointer = createPointer({ camera, controls, element: renderer.domElement, settings, lookElement: hud.lookElement });
 
   const hints = createHints({ controls });
 
@@ -604,6 +610,7 @@ export function createGame({ renderer, camera, controls, opening: prebuilt }) {
     pointer.recentre();
     compassTarget = null;
     compassDue = 0;
+    hunger = 0;
     timeScale = 1;
     audio.reset();
   }
@@ -855,6 +862,9 @@ export function createGame({ renderer, camera, controls, opening: prebuilt }) {
   // The galaxy or structure the compass points you toward, chosen now and then by chooseCompass().
   let compassTarget = null;
   let compassDue = 0; // real seconds until it's chosen again
+  // Game seconds your appetite has been under COMPASS.hungry, back to 0 once it tops COMPASS.fed. The compass shows
+  // from COMPASS.starve on, so it only turns up when you've run out of things to eat.
+  let hunger = 0;
 
   // How well a galaxy that expects you to arrive weighing `fit` times your mass suits you: 1 when it's your size,
   // half when it's a tier and a half smaller or bigger.
@@ -1176,6 +1186,8 @@ export function createGame({ renderer, camera, controls, opening: prebuilt }) {
         hole.appetite = roaming ? clamp(hole.feedRate / hole.mass / FULL_FEED, 0, 1) : 0;
         if (roaming) jets.emit(hole, delta);
       }
+      if (player.state !== 'alive' || player.appetite > COMPASS.fed) hunger = 0;
+      else if (player.appetite < COMPASS.hungry) hunger += delta;
       jets.update(delta);
       if (player.state === 'alive') {
         // Hawking radiation, plus the cost of boosting.
@@ -1295,7 +1307,9 @@ export function createGame({ renderer, camera, controls, opening: prebuilt }) {
       writeLenses();
 
       if (player.state !== 'alive') danger = 0;
-      hud.update({ camera, player, holes, danger, compass: compassShown() });
+      const look = isDown(KEYS.look) || pointer.looking;
+      lookHeld = look ? lookHeld + realDelta : 0;
+      hud.update({ camera, player, holes, danger, compass: compassShown(), starving: hunger >= COMPASS.starve, look });
       timeScale = hints.update(frameDelta, { camera, player, holes, touch: pointer.mode });
       graphics.update();
       audio.update(realDelta, { player, danger, stars: absorbed.count[player.index], timeScale: stopped ? 0 : timeScale });

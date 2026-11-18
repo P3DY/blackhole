@@ -22,7 +22,7 @@ npm run preview   # serve dist/ (dist/index.html can't be opened over file://)
 The `docs/` folder is detailed and accurate. Read the relevant page before you change a system:
 
 - `docs/architecture.md`: module graph, the endless universe (rings of cells, streaming, deltas, fading), the 13-step frame order in `update()`, the rendering pipeline, the spatial grid / disk pool / hole slots / jet pool data structures, and the performance budget.
-- `docs/gameplay.md`: rules, mass/shadow/reach scaling, the galaxy tier table, the scales past the opening and their real names, and the rival AI state machine (feed / travel / hunt / flee).
+- `docs/gameplay.md`: rules, the principles that keep the interface immersive (read "Keeping it immersive" before adding anything to the screen), mass/shadow/reach scaling, the galaxy tier table, the scales past the opening and their real names, and the rival AI state machine (feed / travel / hunt / flee).
 - `docs/tuning.md`: how the constants in `src/config.js` depend on each other, and the capacity limits.
 - `docs/improvements.md`: known bugs and suggested improvements that aren't done yet, and how performance was measured on a throttled CPU. Take an item out when you fix it.
 
