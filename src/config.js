@@ -125,7 +125,14 @@ export const SIDE_CHANGE = { flash: 1.2, cooldown: 4 };
 // trip, and the one it already points at scores `stick` times higher, so it doesn't flicker between two. Inside a
 // galaxy it would choose, the compass hides. Distances on it and the edge arrows are in seconds at your unboosted
 // top speed (THRUST / DRAG shadow radii per second), so they read the same at every scale.
-export const COMPASS = { left: 0.25, fit: [0.2, 6], stick: 1.5, every: 0.5 };
+//
+// It's chosen all the time, but only shown once you've been starving: your appetite (the feeding meter, 0–1) under
+// `hungry` for `starve` seconds of game time. It goes again once your appetite tops `fed`.
+export const COMPASS = { left: 0.25, fit: [0.2, 6], stick: 1.5, every: 0.5, hungry: 0.08, fed: 0.2, starve: 8 };
+// The names and times beside the compass and the edge arrows show while the look key is held (KEYS.look, or a touch
+// held on the mass readout for `press` seconds), and on their own for `flash` seconds the first time each thing
+// they name comes up.
+export const LABELS = { press: 0.3, flash: 2 };
 
 // --- Universe ---------------------------------------------------------------------
 
@@ -250,6 +257,7 @@ export const KEYS = {
   retry: ['KeyR'], // back to the last checkpoint, or the start if there isn't one: held for RETRY_HOLD while alive
   mute: ['KeyM'],
   pause: ['KeyP', 'Escape'], // Escape closes the settings menu first, if it's open
+  look: ['Tab'], // held: names and times beside the compass and the edge arrows, and the compass itself
 };
 
 // Seconds R has to be held to retry while you're still alive, so a stray press mid-game doesn't throw it away.

@@ -30,6 +30,7 @@ Then open the URL Vite prints (http://localhost:5173 by default).
 | **Shift** / hold right mouse button | Boost (1.8× thrust, burns mass) |
 | Left-drag | Orbit the camera. You hold your course while you drag |
 | Scroll | Zoom |
+| Hold **Tab** | Look: names and travel times beside the edge arrows, and the compass toward somewhere to feed. Otherwise the compass only shows once you've gone a while without feeding |
 | **R** | Retry from your last checkpoint (or from the start, if you haven't reached one). While you're alive, hold it for a moment, so a stray press can't throw the run away |
 | **P** / **Esc** | Pause, or carry on. The game also pauses while the settings menu is open, and (with a keyboard) when you switch to another window |
 | Gear menu (top left), Game tab | **Retry**, or **Start over** from the beginning (press it twice, since it throws your checkpoint away) |
@@ -43,6 +44,7 @@ On a touch screen:
 |---------|--------|
 | One finger | Steer, in the mode picked in the gear menu's Touch tab (remembered) |
 | Two fingers | Pinch to zoom, drag to orbit |
+| Hold your mass (top right) | Look, as Tab does. You can keep steering with another finger |
 
 | Touch mode | Steer | Boost |
 |------------|-------|-------|
@@ -94,7 +96,7 @@ src/
   graphics.js       the Video tab: resolution (the pixel ratio), bloom, full screen
   pacer.js          lowers the resolution while frames are slow, and raises it again when there's room
   audio.js          synthesised music loop, ambience and sound effects
-  hud.js / hud.css  DOM overlay: mass readout, edge arrows, vignette, checkpoint note, end card, Game tab
+  hud.js / hud.css  DOM overlay: mass readout, edge arrows, compass and labels, vignette, checkpoint note, end card, Game tab
   hints.js / .css   control lessons as looping gestures, and the slowed moments that explain weight
   save.js           keeps the last checkpoint in IndexedDB, so a reload carries on from it
   style.css         page base styles

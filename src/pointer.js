@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DOUBLE_TAP, POINTER, STICK, TILT, TOUCH_MODE } from './config.js';
+import { DOUBLE_TAP, LABELS, POINTER, STICK, TILT, TOUCH_MODE } from './config.js';
 import { readChoice, readFlag, writeChoice, writeFlag } from './settings.js';
 
 const { clamp, degToRad, radToDeg } = THREE.MathUtils;
@@ -29,7 +29,12 @@ const NO_SENSOR = 2000; // ms to wait for a first tilt reading before giving up 
 //   hold to boost.
 // - tilt: tilt the phone and the black hole rolls that way, from however you held it when you picked tilt (or
 //   restarted). Holding a finger down boosts.
-export function createPointer({ camera, controls, element, settings }) {
+//
+// Holding a finger on `lookElement` (the mass readout) for LABELS.press seconds is the look key. It's a touch of its
+// own rather than a long press on the canvas, where a finger held still already means something in every mode
+// (drifting gently, heading for it, or boosting), and a second finger would turn the camera. Since the canvas never
+// sees it, you can hold it with one thumb and steer with the other.
+export function createPointer({ camera, controls, element, settings, lookElement }) {
   controls.touches = { ONE: null, TWO: THREE.TOUCH.DOLLY_ROTATE }; // one finger is ours
 
   const stick = document.createElement('div');
@@ -44,6 +49,7 @@ export function createPointer({ camera, controls, element, settings }) {
   const touches = new Set();
   let finger = null; // { id, x0, y0, x, y, time, boost } while one finger is down on its own
   let tapped = -Infinity; // when the last tap (a short lone touch) lifted, in event time, for double-taps
+  let look = null; // { id, time } while a finger is on the look element, `time` from performance.now()
 
   let mode = readChoice(MODE_STORAGE, MODES.map(([key]) => key), TOUCH_MODE);
   let stickHidden = readFlag(STICK_STORAGE);
@@ -247,8 +253,24 @@ export function createPointer({ camera, controls, element, settings }) {
     touches.clear();
     finger = null;
     tapped = -Infinity;
+    look = null;
     drawStick();
   }
+
+  // The look element only takes touches (see .bh-readout in hud.css). Capturing the pointer means sliding off it
+  // still lets go when the finger lifts.
+  function onLookDown(event) {
+    if (event.pointerType === 'mouse' || look) return;
+    event.preventDefault();
+    look = { id: event.pointerId, time: performance.now() };
+    lookElement.setPointerCapture?.(event.pointerId);
+  }
+
+  function onLookUp(event) {
+    if (look?.id === event.pointerId) look = null;
+  }
+
+  const noMenu = (event) => event.preventDefault(); // a long press would open the context menu
 
   element.addEventListener('pointerdown', onPointerDown);
   element.addEventListener('pointermove', onPointerMove);
@@ -256,6 +278,10 @@ export function createPointer({ camera, controls, element, settings }) {
   element.addEventListener('pointercancel', onPointerUp);
   element.addEventListener('pointerleave', onPointerLeave);
   window.addEventListener('blur', onBlur);
+  lookElement?.addEventListener('pointerdown', onLookDown);
+  lookElement?.addEventListener('pointerup', onLookUp);
+  lookElement?.addEventListener('pointercancel', onLookUp);
+  lookElement?.addEventListener('contextmenu', noMenu);
 
   // --- Steering ---------------------------------------------------------------------
 
@@ -321,6 +347,11 @@ export function createPointer({ camera, controls, element, settings }) {
       return out.set(0, 0, 0);
     },
 
+    // Whether a finger has been held on the look element long enough to count as holding the look key.
+    get looking() {
+      return look !== null && performance.now() - look.time >= LABELS.press * 1000;
+    },
+
     // The keys are steering: ignore the mouse until it moves again.
     yieldToKeys: stopMouse,
 
@@ -337,6 +368,10 @@ export function createPointer({ camera, controls, element, settings }) {
       element.removeEventListener('pointercancel', onPointerUp);
       element.removeEventListener('pointerleave', onPointerLeave);
       window.removeEventListener('blur', onBlur);
+      lookElement?.removeEventListener('pointerdown', onLookDown);
+      lookElement?.removeEventListener('pointerup', onLookUp);
+      lookElement?.removeEventListener('pointercancel', onLookUp);
+      lookElement?.removeEventListener('contextmenu', noMenu);
       stopTilt();
       stick.remove();
     },
