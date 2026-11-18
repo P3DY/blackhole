@@ -176,6 +176,18 @@ There's no introduction: the game starts straight away and teaches itself as you
 
 The thresholds are in `LESSONS` and `SLOW_MOTION` (see [tuning.md](tuning.md#hints)).
 
+## Keeping it immersive
+
+The game is meant to feel like drifting through space, not reading a dashboard. Check any new feature, cue or piece of interface against these, in order:
+
+1. **Say it in the world first.** Light, color, rings, motion and sound before words. The tinted photon rings, the red vignette and the danger growl are the model: they tell you who outweighs you without a single label.
+2. **Only when it matters.** A cue that shows while you're doing fine is noise. Prefer a trigger (starving, lost, in danger, something new) over showing it all the time.
+3. **On request.** Information you might want but don't need, such as names, distances and the map, appears while you hold a key and goes away when you let go.
+4. **Fade with familiarity.** Once you've learned something, stop telling you. The lessons already retire once used; labels and other aids should too.
+5. **Keep bookkeeping out of play.** Records, progress, goals and the logbook belong on the pause screen, in the settings menu and on the end card.
+
+Words that stay on screen during play are the exception. Before adding any, look for a way to show it in the world, or make it something you ask for. Settings and menus cost nothing here, so a feature that only adds options (volume, gamepads) needs no such care.
+
 ## HUD
 
 The HUD is deliberately sparse. Apart from the hints, nothing pops up during play, and the only words that stay on screen are the few labels on the edge markers. Weight relations show in the world itself: red photon rings and solid red rings mean heavier than you, blue photon rings and dashed blue rings mean prey (see [Who outweighs whom](#who-outweighs-whom-tints-rings-and-the-vignette)).
